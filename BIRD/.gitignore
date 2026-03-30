@@ -1,0 +1,7 @@
+.env_*
+results/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+bird/

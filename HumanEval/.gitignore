@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Credentials — never commit
+.env_*
+
+# Benchmark results (large, auto-generated)
+results/

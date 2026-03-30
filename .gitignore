@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Credentials — never commit
+.env_*
+
+# Benchmark results (large, auto-generated)
+results/
+
+# BIRD dataset (large, manual download) — lowercase only, not the BIRD/ project folder
+BIRD/bird/

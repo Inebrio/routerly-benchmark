@@ -1,0 +1,190 @@
+# Routerly Benchmark — HumanEval
+
+A fully agnostic benchmark to evaluate **pass@1**, latency, and cost of any OpenAI-compatible endpoint using the **HumanEval** dataset (164 Python code generation problems).
+
+---
+
+## Design
+
+The script has no knowledge of the target: it reads only `BASE_URL`, `API_KEY`, and `MODEL` from the `.env` file. It works identically whether pointing at Anthropic, OpenAI, or Routerly. This guarantees comparable results without modifying any code between runs.
+
+---
+
+## Setup
+
+**Python 3.10+, virtualenv:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `BASE_URL` | yes | API endpoint (e.g. `https://api.anthropic.com/v1`) |
+| `API_KEY` | yes | API key |
+| `MODEL` | yes | Model identifier (e.g. `claude-opus-4-6`) |
+| `SHOW_COST` | no | `true` to calculate estimated cost |
+| `PRICE_INPUT` | no | Price in $/M input tokens (required if `SHOW_COST=true`) |
+| `PRICE_OUTPUT` | no | Price in $/M output tokens (required if `SHOW_COST=true`) |
+| `REASONING_EFFORT` | no | Reasoning level for models that support it (`low`/`medium`/`high`) |
+
+Example `.env_routerly`:
+
+```env
+BASE_URL=http://localhost:5173/v1
+API_KEY=sk-rt-xxxx
+MODEL=routerly/ada
+SHOW_COST=false
+```
+
+Example `.env_anthropic_opus`:
+
+```env
+BASE_URL=https://api.anthropic.com/v1
+API_KEY=sk-ant-xxxx
+MODEL=claude-opus-4-6
+SHOW_COST=true
+PRICE_INPUT=15.0
+PRICE_OUTPUT=75.0
+```
+
+---
+
+## Usage
+
+```bash
+python benchmark.py --env <env_file> [--n <num_problems>] [--seed <seed>] [--timeout <seconds>]
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `--env` | required | Path to the `.env` file |
+| `--n` | `30` | Number of problems to sample (max 164) |
+| `--seed` | `42` | Seed for reproducible sampling |
+| `--timeout` | `10` | Execution timeout per problem (seconds) |
+
+Example comparative run:
+
+```bash
+python benchmark.py --env .env_routerly --n 50 --seed 42
+python benchmark.py --env .env_anthropic_opus --n 50 --seed 42
+```
+
+The same seed guarantees both runs receive the same problems.
+
+---
+
+## Dataset
+
+**HumanEval** (`openai/openai_humaneval`, split `test`) — 164 Python programming problems with a function signature, docstring, and hidden test cases. Each problem requires implementing a function body that passes all tests.
+
+The benchmark samples `--n` problems randomly. The same seed guarantees reproducibility.
+
+---
+
+## Prompt
+
+Each problem is sent in the format:
+
+```
+Complete the following Python function. Return ONLY the complete, runnable Python
+function (including the def line and body). No markdown code fences. No explanations.
+
+def has_close_elements(numbers: List[float], threshold: float) -> bool:
+    """ Check if in given list of numbers, are any two numbers closer to each
+    other than given threshold.
+    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)
+    False
+    ...
+    """
+```
+
+No system prompt. The expected response is the complete Python function.
+
+---
+
+## Evaluation
+
+The generated code is executed in an **isolated subprocess** with a timeout.
+
+If the model returns the complete function (with `def`), it is used directly. If it returns only the body (rare), it is concatenated to the original prompt.
+
+The full code executed is:
+
+```
+{generated_function}
+
+{test_cases}  # contains the check(candidate) function
+check(entry_point)
+```
+
+A problem is considered **passed** only if all test cases run without errors or exceptions.
+
+---
+
+## Metrics collected
+
+Per problem:
+
+| Field | Type | Description |
+|---|---|---|
+| `passed` | bool | All tests passed |
+| `error` | string | Error message (if failed) |
+| `completion` | string | Generated code (normalised) |
+| `input_tokens` | int | Input (prompt) tokens |
+| `output_tokens` | int | Output (response) tokens |
+| `reasoning_tokens` | int | Internal reasoning tokens (if supported) |
+| `latency_s` | float | Total call latency in seconds |
+| `ttft_s` | float | Time To First Token in seconds |
+
+Aggregated in the summary:
+
+- pass@1 (%)
+- Total / input / output / reasoning / visible output tokens
+- Average throughput (tok/s)
+- TTFT min / max / avg
+- Estimated cost (if `SHOW_COST=true`)
+
+---
+
+## Output
+
+**Terminal:** live progress bar with real-time counters (pass/fail, pass@1, tokens, tok/s, TTFT, avg latency), followed by a summary table.
+
+**JSON file:** saved automatically to `./results/<timestamp>_<env_label>.json`.
+
+---
+
+## Retry and error handling
+
+API calls are automatically retried up to 3 times:
+
+- `RateLimitError`: exponential backoff (1s, 2s, 4s)
+- Generic `APIError`: retry with 1s wait
+
+The benchmark can be interrupted with `Ctrl+C`: the summary and JSON are saved with partial results, marked `[INTERRUPTED]`.
+
+---
+
+## Note on estimated cost
+
+The cost calculated by `SHOW_COST=true` is an estimate based on tokens counted by the API. For Routerly, actual costs include router overhead (additional tokens for the routing decision) and should be verified in the Routerly backend, not calculated from this script.
+
+---
+
+## File structure
+
+```
+HumanEval/
+├── README
+├── benchmark.py        # main script
+├── requirements.txt
+├── .env_*              # credentials (do not commit)
+└── results/            # JSON outputs (auto-generated)
+```

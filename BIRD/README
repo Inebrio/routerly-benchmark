@@ -1,0 +1,210 @@
+# Routerly Benchmark — BIRD (SQL)
+
+An agnostic benchmark to evaluate SQL generation capability on real business databases, using the **BIRD** (BIg Bench for LaRge-scale Database Grounded Text-to-SQL) dataset.
+
+---
+
+## Design
+
+The script follows the same principle as the MMLU benchmark: fully agnostic with respect to the target. It reads `BASE_URL`, `API_KEY`, and `MODEL` from the `.env` file and works identically whether pointing at any OpenAI-compatible endpoint — direct or through Routerly.
+
+The main metric is **execution accuracy**: the generated query is correct if its result, run against the SQLite database, matches the result of the gold standard query. The SQL text itself is not evaluated, only the output.
+
+---
+
+## Why BIRD for the Routerly demo
+
+BIRD includes 3 explicit difficulty levels in the dataset — `simple`, `moderate`, `challenging` — with real accuracy variance between small and large models:
+
+| Level | Example | Cheap model | Premium model |
+|---|---|---|---|
+| simple | `SELECT name FROM customers WHERE country = 'Italy'` | ~85% | ~95% |
+| moderate | Multi-table JOINs with aggregations and filters | ~55% | ~85% |
+| challenging | Nested subqueries, window functions, complex logic | ~20% | ~65% |
+
+The router reads the natural language question and the database schema — both present in the prompt — and decides which model has the capability to generate the correct query.
+
+---
+
+## Dataset
+
+**BIRD** — manual download required from [bird-bench.github.io](https://bird-bench.github.io/).
+
+The dataset includes:
+- `dev.json` — questions with gold SQL and metadata (db_id, difficulty, evidence)
+- `dev_databases/` — folder with one SQLite database per domain
+
+Business domains covered: finance, retail, sport, government, academia, medicine, social media (95 databases total in the dev set).
+
+Expected directory structure:
+
+```
+bird/
+├── dev.json
+└── dev_databases/
+    ├── financial/
+    │   └── financial.sqlite
+    ├── retail_world/
+    │   └── retail_world.sqlite
+    └── ...
+```
+
+---
+
+## Setup
+
+**Python 3.10+, virtualenv:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+No additional dependency for SQLite — uses `sqlite3` from the Python standard library.
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `BASE_URL` | yes | API endpoint |
+| `API_KEY` | yes | API key |
+| `MODEL` | yes | Model identifier |
+| `SHOW_COST` | no | `true` for estimated cost |
+| `PRICE_INPUT` | no | $/M input tokens |
+| `PRICE_OUTPUT` | no | $/M output tokens |
+| `REASONING_EFFORT` | no | Reasoning level (if supported) |
+
+---
+
+## Usage
+
+```bash
+python benchmark.py --env <env_file> --bird-dir <bird_path> [options]
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `--env` | required | Path to the `.env` file |
+| `--bird-dir` | required | Path to the downloaded BIRD folder |
+| `--n` | `30` | Total number of questions |
+| `--difficulty` | `all` | Filter by difficulty: `simple`, `moderate`, `challenging`, `all` |
+| `--seed` | `42` | Seed for reproducibility |
+
+Example comparative run with mixed difficulty:
+
+```bash
+python benchmark.py --env .env_routerly --bird-dir ./bird --n 30 --seed 42
+python benchmark.py --env .env_anthropic_opus --bird-dir ./bird --n 30 --seed 42
+```
+
+Same seed = same questions = comparable results.
+
+---
+
+## Prompt
+
+For each question the model receives:
+
+```
+Database schema:
+CREATE TABLE customers (id INTEGER, name TEXT, country TEXT, ...);
+CREATE TABLE orders (id INTEGER, customer_id INTEGER, amount REAL, ...);
+
+Additional context: {evidence}
+
+Question: {question}
+
+Write a SQLite SQL query to answer the question. Return only the SQL query, no explanation.
+```
+
+The schema is extracted directly from the SQLite database using `PRAGMA table_info`. The BIRD `evidence` field contains domain-specific hints (e.g. definitions of ambiguous columns) — included in the prompt because it is part of the official dataset.
+
+---
+
+## Evaluation
+
+Correctness is evaluated with **execution accuracy**:
+
+1. Execute the gold query against the SQLite database -> `result_gold`
+2. Execute the model-generated query -> `result_predicted`
+3. Normalise both results (ordering, types)
+4. Compare: `result_gold == result_predicted`
+
+In case of SQL syntax errors or runtime errors, the question is marked as wrong without crashing.
+
+---
+
+## Metrics collected
+
+Per question:
+
+| Field | Type | Description |
+|---|---|---|
+| `correct` | bool | Execution accuracy |
+| `difficulty` | string | `simple` / `moderate` / `challenging` |
+| `db_id` | string | Reference database |
+| `sql_generated` | string | Model-generated query |
+| `sql_gold` | string | Dataset gold query |
+| `error` | string | SQL runtime error (if any) |
+| `input_tokens` | int | Prompt tokens |
+| `output_tokens` | int | Response tokens |
+| `latency_s` | float | Total latency |
+| `ttft_s` | float | Time To First Token |
+
+Aggregated in the summary:
+
+- Total execution accuracy (%)
+- Accuracy by difficulty level (simple / moderate / challenging)
+- Total / input / output tokens
+- Average throughput (tok/s)
+- TTFT min / max / avg
+- Estimated cost (if `SHOW_COST=true`)
+
+---
+
+## Output
+
+**Terminal:** live progress bar + summary table with total accuracy and breakdown by difficulty.
+
+**JSON file:** saved to `./results/<timestamp>_<env_label>.json`.
+
+---
+
+## Comparison with MMLU benchmark
+
+| Aspect | MMLU | BIRD |
+|---|---|---|
+| Task | Multiple choice (A/B/C/D) | Free-form SQL generation |
+| Evaluation | Letter extraction | Query execution on SQLite |
+| Dataset | Automatic from HuggingFace | Manual download |
+| Difficulty | Implicit in subject | Explicit in dataset (3 levels) |
+| Context | Question only | Question + DB schema + evidence |
+| Infrastructure | None | Local SQLite (included in Python) |
+| Business relevance | Academic | Direct (questions on real business data) |
+
+---
+
+## Notes on routing with Routerly
+
+BIRD is particularly effective for demonstrating intelligent routing because:
+
+- `simple` questions contain straightforward language and simple schemas — the router easily recognises the low cognitive requirement
+- `challenging` questions contain technical SQL terminology, references to multiple tables, and complex logic — a clear signal to escalate to premium models
+- The context (schema + evidence) is visible to the router before the decision, not just the natural language question
+
+---
+
+## File structure
+
+```
+BIRD/
+├── README
+├── benchmark.py        # main script
+├── requirements.txt
+├── .env_*              # credentials (do not commit)
+├── bird/               # BIRD dataset (manual download)
+└── results/            # JSON outputs (auto-generated)
+```

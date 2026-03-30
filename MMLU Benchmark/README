@@ -1,0 +1,146 @@
+# Routerly Benchmark — MMLU (Massive Multitask Language Understanding)
+
+A fully agnostic benchmark script: reads `BASE_URL`, `API_KEY`, and `MODEL` from a `.env` file and makes no assumptions about the backend.
+
+---
+
+## Design
+
+The script receives only the endpoint configuration from the `.env` file. It works identically whether pointing at Anthropic directly, OpenAI directly, or Routerly. This ensures results are comparable without any code changes between runs.
+
+---
+
+## Setup
+
+**Python 3.10+, virtualenv:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Required `.env` files** (one per run target):
+
+```env
+# .env_anthropic_opus
+BASE_URL=https://api.anthropic.com/v1
+API_KEY=sk-ant-...
+MODEL=claude-opus-4-6
+```
+
+```env
+# .env_routerly
+BASE_URL=http://localhost:5173/v1
+API_KEY=sk-rt-xxxx
+MODEL=routerly/ada
+```
+
+---
+
+## Usage
+
+```bash
+python benchmark.py --env .env_anthropic_opus --seed 42
+```
+
+| Argument | Default | Description |
+|---|---|---|
+| `--env` | required | Path to the `.env` file |
+| `--n` | `30` | Number of questions to sample |
+| `--seed` | `42` | Seed for reproducibility |
+
+Use the same `--seed` across parallel runs to receive identical question sets.
+
+---
+
+## Dataset
+
+**MMLU** (`cais/mmlu`, split `test`) — 14,079 multiple-choice questions across 57 academic subjects, from elementary mathematics to professional law and medicine. Downloaded automatically from Hugging Face on first run.
+
+Each question has four answer choices (A/B/C/D) and a single correct answer.
+
+---
+
+## Prompt
+
+Each question is sent in the format:
+
+```
+{question}
+
+A) {choice_a}
+B) {choice_b}
+C) {choice_c}
+D) {choice_d}
+
+Reply with only the single letter of the correct option (A, B, C, or D). No explanation.
+```
+
+No system prompt. The model must return a single letter.
+
+---
+
+## Evaluation
+
+The response is parsed with a regex looking for the first standalone letter A–D. The answer is correct if it matches the gold label.
+
+---
+
+## Metrics collected
+
+Per question:
+
+| Field | Type | Description |
+|---|---|---|
+| `correct` | bool | Whether the answer matched the gold label |
+| `subject` | string | MMLU subject category |
+| `answer_extracted` | string | Letter extracted from the response |
+| `answer_gold` | string | Correct answer |
+| `input_tokens` | int | Prompt tokens |
+| `output_tokens` | int | Response tokens |
+| `latency_s` | float | Total call latency |
+| `ttft_s` | float | Time To First Token |
+
+Aggregated in the summary:
+
+- Accuracy (%)
+- Total / input / output tokens
+- Average throughput (tok/s)
+- TTFT min / max / avg
+- Estimated cost (if `SHOW_COST=true`)
+
+---
+
+## Output
+
+**Terminal:** live progress bar with real-time counters (correct/wrong, accuracy, tokens, tok/s, TTFT), followed by a summary table.
+
+**JSON file:** saved automatically to `./results/<timestamp>_<env_label>.json`.
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `BASE_URL` | yes | API endpoint |
+| `API_KEY` | yes | API key |
+| `MODEL` | yes | Model identifier |
+| `SHOW_COST` | no | `true` to show estimated cost |
+| `PRICE_INPUT` | no | $/M input tokens |
+| `PRICE_OUTPUT` | no | $/M output tokens |
+| `REASONING_EFFORT` | no | Reasoning level (`low`/`medium`/`high`) |
+
+---
+
+## File structure
+
+```
+MMLU Benchmark/
+├── README
+├── benchmark.py        # main script
+├── requirements.txt
+├── .env_*              # credentials (do not commit)
+└── results/            # JSON outputs (auto-generated)
+```
