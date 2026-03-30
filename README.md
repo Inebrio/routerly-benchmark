@@ -126,12 +126,27 @@ Results are saved to `results/<timestamp>_<env_label>.json`.
 
 ## `.env` file conventions
 
-```env
-BASE_URL=https://api.anthropic.com/v1   # or Routerly endpoint
-API_KEY=sk-ant-xxxx
-MODEL=claude-opus-4-6
+Each subdirectory contains a ready-to-use `.env.example`. Copy it to the target you want to run:
 
-# Optional
+```bash
+cp .env.example .env_routerly          # Routerly router
+cp .env.example .env_anthropic_opus    # Claude Opus direct
+cp .env.example .env_anthropic_sonnet  # Claude Sonnet direct
+cp .env.example .env_openai_41-nano    # GPT-4.1-nano direct
+```
+
+Then edit the copy with the correct `BASE_URL`, `API_KEY`, and `MODEL`:
+
+| Target | `BASE_URL` | `MODEL` |
+|---|---|---|
+| Routerly | `https://api.routerly.ai/v1` | `auto` |
+| Anthropic Claude Opus | `https://api.anthropic.com/v1` | `claude-opus-4-6` |
+| Anthropic Claude Sonnet | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
+| OpenAI GPT-4.1-nano | `https://api.openai.com/v1` | `gpt-4.1-nano` |
+
+Optional variables:
+
+```env
 SHOW_COST=true
 PRICE_INPUT=15.0       # $/M input tokens
 PRICE_OUTPUT=75.0      # $/M output tokens
