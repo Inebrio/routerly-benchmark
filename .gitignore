@@ -12,6 +12,7 @@ __pycache__/
 
 # Benchmark results (large, auto-generated)
 results/
+Benchmark_Report/raw_results/
 
 # BIRD dataset (large, manual download) — lowercase only, not the BIRD/ project folder
 BIRD/bird/

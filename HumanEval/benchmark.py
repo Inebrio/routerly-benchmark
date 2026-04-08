@@ -2,13 +2,13 @@
 """
 Routerly Benchmark — HumanEval
 
-Benchmark agnostico per valutare la capacità di code generation
-di qualsiasi endpoint compatibile con l'API OpenAI, usando il dataset HumanEval
-(164 problemi di programmazione Python).
+Agnostic benchmark to evaluate the code generation capability
+of any OpenAI-API-compatible endpoint, using the HumanEval dataset
+(164 Python programming problems).
 
-Lo script non conosce il target: riceve solo BASE_URL, API_KEY e MODEL
-dal file .env specificato. Funziona identicamente puntando a Anthropic,
-OpenAI, modelli locali via Ollama o Routerly.
+The script does not know the target: it only receives BASE_URL, API_KEY and MODEL
+from the specified .env file. It works identically when pointing to Anthropic,
+OpenAI, local models via Ollama or Routerly.
 """
 
 import argparse
@@ -25,7 +25,7 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
-# Silenzia tutti i warning di HuggingFace (prima degli import HF)
+# Silence all HuggingFace warnings (before HF imports)
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 os.environ.setdefault("DATASETS_VERBOSITY", "error")
 logging.getLogger("datasets").setLevel(logging.ERROR)
@@ -52,6 +52,15 @@ console = Console()
 
 HUMANEVAL_TOTAL = 164  # numero totale di problemi nel dataset
 
+# List prices for known models ($/M token: input, output).
+# Used as default if PRICE_INPUT/PRICE_OUTPUT are not present in the .env.
+# Can always be overridden via variables in the .env file.
+KNOWN_PRICES: dict[str, tuple[float, float]] = {
+    "claude-opus-4-6":   (15.0, 75.0),
+    "claude-sonnet-4-6": ( 3.0, 15.0),
+    "gpt-4.1-nano":      ( 0.1,  0.4),
+}
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -61,7 +70,7 @@ def load_config(env_file: str) -> dict:
     cfg = dotenv_values(env_file)
     for key in ("BASE_URL", "API_KEY", "MODEL"):
         if not cfg.get(key):
-            console.print(f"[red]Errore: variabile '{key}' mancante in {env_file}[/red]")
+            console.print(f"[red]Error: missing variable '{key}' in {env_file}[/red]")
             sys.exit(1)
     return cfg
 
@@ -71,7 +80,7 @@ def load_config(env_file: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def load_humaneval_problems(n: int, rng: random.Random) -> list[dict]:
-    """Carica N problemi random dal dataset HumanEval."""
+    """Load N random problems from the HumanEval dataset."""
     dataset = load_dataset("openai/openai_humaneval", split="test")
     indices = list(range(len(dataset)))
     rng.shuffle(indices)
@@ -108,7 +117,7 @@ def build_prompt(problem: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def extract_completion(raw: str) -> str:
-    """Rimuove markdown fences e spazi superflui dalla risposta del modello."""
+    """Remove markdown fences and extra whitespace from the model response."""
     code = re.sub(r"```(?:python)?\n?", "", raw)
     code = re.sub(r"```", "", code)
     return code.strip()
@@ -116,11 +125,11 @@ def extract_completion(raw: str) -> str:
 
 def build_test_code(problem: dict, completion: str) -> str:
     """
-    Costruisce il codice completo da eseguire.
+    Build the complete code to execute.
 
-    Se il modello ha restituito la funzione completa (contiene 'def entry_point'),
-    la usiamo direttamente. Altrimenti, concateniamo col prompt originale
-    (trattando la risposta come il corpo della funzione).
+    If the model returned the complete function (contains 'def entry_point'),
+    use it directly. Otherwise, concatenate with the original prompt
+    (treating the response as the function body).
     """
     if re.search(r"def\s+" + re.escape(problem["entry_point"]) + r"\s*\(", completion):
         function_code = completion
@@ -139,8 +148,8 @@ def build_test_code(problem: dict, completion: str) -> str:
 
 def run_tests(code: str, timeout: int) -> tuple[bool, str]:
     """
-    Esegue il codice generato in un sottoprocesso isolato con timeout.
-    Restituisce (passed, error_message).
+    Execute the generated code in an isolated subprocess with timeout.
+    Returns (passed, error_message).
     """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(code)
@@ -185,10 +194,10 @@ def call_api(
     reasoning_effort: str | None = None,
 ) -> tuple[str, int, int, int, float, str | None]:
     """
-    Chiama l'API in streaming e restituisce
+    Call the API in streaming mode and return
     (raw_text, input_tokens, output_tokens, reasoning_tokens, ttft_s, trace_id).
-    trace_id è l'header x-routerly-trace-id, presente solo con backend Routerly.
-    Riprova fino a `retries` volte in caso di errore.
+    trace_id is the x-routerly-trace-id header, present only with the Routerly backend.
+    Retries up to `retries` times on error.
     """
     extra: dict = {}
     if reasoning_effort is not None:
@@ -237,10 +246,10 @@ def call_api(
             else:
                 raise
         except openai.APIError as e:
-            # Routerly: tutti i modelli hanno raggiunto i limiti → backoff lungo
+            # Routerly: all models have reached their limits → long backoff
             if "all_models_limits_exceeded" in str(e).lower() or "routing failed" in str(e).lower() or "no_models_available" in str(e).lower():
                 wait = 10 * (attempt + 1)
-                console.print(f"[yellow]Routing limits exceeded, attendo {wait}s...[/yellow]")
+                console.print(f"[yellow]Routing limits exceeded, waiting {wait}s...[/yellow]")
                 if attempt < retries - 1:
                     time.sleep(wait)
                 else:
@@ -258,9 +267,9 @@ def call_api(
 
 def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -> dict | None:
     """
-    Aggrega tutti i record da usage.json con lo stesso traceId:
-    completion + routing (LLM policy) + eventuali cascade falliti.
-    Il totale corrisponde al costo riportato dal backend.
+    Aggregate all records from usage.json with the same traceId:
+    completion + routing (LLM policy) + any failed cascades.
+    The total matches the cost reported by the backend.
     """
     for attempt in range(max_retries):
         try:
@@ -270,7 +279,7 @@ def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -
                 if attempt < max_retries - 1:
                     time.sleep(0.5)
                 continue
-            # Il record completion (callType != routing) porta modelId, outcome e trace
+            # The completion record (callType != routing) carries modelId, outcome and trace
             completion = next(
                 (r for r in reversed(matches) if r.get("callType") != "routing" and r.get("outcome") == "success"),
                 matches[-1],
@@ -298,7 +307,7 @@ def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -
 # ---------------------------------------------------------------------------
 
 def make_progress(env_label: str):
-    """Restituisce (bar_progress, stats_progress): barra su riga 1, stats su riga 2."""
+    """Return (bar_progress, stats_progress): progress bar on line 1, stats on line 2."""
     bar = Progress(
         SpinnerColumn(),
         TextColumn(f"[bold cyan]{env_label}[/bold cyan]"),
@@ -346,30 +355,30 @@ def print_summary(
 
     title = f"[bold]{env_label}[/bold]  [dim]({model})[/dim]"
     if interrupted:
-        title += "  [bold red][INTERROTTO][/bold red]"
+        title += "  [bold red][INTERRUPTED][/bold red]"
 
     table = Table(title=title, show_header=False, min_width=46)
     table.add_column(style="dim", width=28)
     table.add_column(justify="right", style="bold")
 
-    table.add_row("Inizio", start_dt.strftime("%H:%M:%S"))
-    table.add_row("Fine", end_dt.strftime("%H:%M:%S"))
-    table.add_row("Durata", f"{elapsed:.1f}s")
+    table.add_row("Start", start_dt.strftime("%H:%M:%S"))
+    table.add_row("End", end_dt.strftime("%H:%M:%S"))
+    table.add_row("Duration", f"{elapsed:.1f}s")
     table.add_row("", "")
     table.add_row("pass@1", f"{pass1:.1f}%")
-    table.add_row("  passati", str(passed))
-    table.add_row("  falliti", str(total - passed))
+    table.add_row("  passed", str(passed))
+    table.add_row("  failed", str(total - passed))
     table.add_row("", "")
-    table.add_row("Token totali", f"{tokens_total:,}")
+    table.add_row("Total tokens", f"{tokens_total:,}")
     table.add_row("  input", f"{sum(r['input_tokens'] for r in results):,}")
     table.add_row("  output", f"{sum(r['output_tokens'] for r in results):,}")
     if total_reasoning > 0:
-        table.add_row("    di cui reasoning", f"{total_reasoning:,}")
+        table.add_row("    of which reasoning", f"{total_reasoning:,}")
         table.add_row(
-            "    output visibile",
+            "    visible output",
             f"{sum(r['output_tokens'] - r.get('reasoning_tokens', 0) for r in results):,}",
         )
-    table.add_row("Tok/s medi", f"{tps:.0f}")
+    table.add_row("Avg tok/s", f"{tps:.0f}")
     table.add_row("", "")
     ttfts = [r["ttft_s"] for r in results if r.get("ttft_s") is not None]
     if ttfts:
@@ -378,12 +387,12 @@ def print_summary(
         table.add_row("TTFT avg", f"{sum(ttfts)/len(ttfts)*1000:.0f} ms")
     if cost_info:
         table.add_row("", "")
-        table.add_row("Costo totale", f"${cost_info['total_cost']:.6f}")
+        table.add_row("Total cost", f"${cost_info['total_cost']:.6f}")
         table.add_row(f"  input  (${cost_info['price_input']}/M tok)", f"${cost_info['cost_input']:.6f}")
         table.add_row(f"  output (${cost_info['price_output']}/M tok)", f"${cost_info['cost_output']:.6f}")
     if routerly_cost_info:
         table.add_row("", "")
-        table.add_row("Costo Routerly (tracelog)", f"${routerly_cost_info['total_cost']:.6f}")
+        table.add_row("Routerly cost (tracelog)", f"${routerly_cost_info['total_cost']:.6f}")
         if routerly_cost_info.get('price_input') is not None:
             table.add_row(f"  input  (${routerly_cost_info['price_input']}/M tok)", f"${routerly_cost_info['cost_input']:.6f}")
             table.add_row(f"  output (${routerly_cost_info['price_output']}/M tok)", f"${routerly_cost_info['cost_output']:.6f}")
@@ -448,7 +457,7 @@ def save_results(
         "results": results,
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    console.print(f"[dim]Risultati salvati in {path}[/dim]")
+    console.print(f"[dim]Results saved to {path}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -457,29 +466,29 @@ def save_results(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Routerly Benchmark — HumanEval")
-    parser.add_argument("--env", required=True, help="Percorso del file .env da usare")
+    parser.add_argument("--env", required=True, help="Path to the .env file to use")
     parser.add_argument(
         "--n",
         type=int,
         default=30,
-        help=f"Numero di problemi HumanEval (default: 30, max: {HUMANEVAL_TOTAL})",
+        help=f"Number of HumanEval problems (default: 30, max: {HUMANEVAL_TOTAL})",
     )
-    parser.add_argument("--seed", type=int, default=42, help="Seed per riproducibilità (default: 42)")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for reproducibility (default: 42)")
     parser.add_argument(
         "--timeout",
         type=int,
         default=10,
-        help="Timeout esecuzione test per problema in secondi (default: 10)",
+        help="Test execution timeout per problem in seconds (default: 10)",
     )
     parser.add_argument(
         "--delay",
         type=float,
         default=0.0,
-        help="Pausa in secondi tra una richiesta e la successiva (default: 0). Utile con Routerly per evitare all_models_limits_exceeded.",
+        help="Delay in seconds between requests (default: 0). Useful with Routerly to avoid all_models_limits_exceeded.",
     )
     args = parser.parse_args()
 
-    # Carica configurazione
+    # Load configuration
     cfg = load_config(args.env)
     env_label = Path(args.env).name
     model = cfg["MODEL"]
@@ -493,19 +502,21 @@ def main() -> None:
     )
 
     # Dataset
-    console.print("[dim]Caricamento dataset HumanEval...[/dim]")
+    console.print("[dim]Loading HumanEval dataset...[/dim]")
     rng = random.Random(args.seed)
     n = min(args.n, HUMANEVAL_TOTAL)
     problems = load_humaneval_problems(n, rng)
     total = len(problems)
-    console.print(f"[dim]{total} problemi caricati[/dim]")
+    console.print(f"[dim]{total} problems loaded[/dim]")
 
-    # Pre-calcola prezzi per il costo live nella progress bar
-    show_cost = cfg.get("SHOW_COST", "false").lower() == "true"
-    price_in = float(cfg.get("PRICE_INPUT", "0")) if show_cost else 0.0
-    price_out = float(cfg.get("PRICE_OUTPUT", "0")) if show_cost else 0.0
+    # Prices: explicit override from .env, otherwise fallback to KNOWN_PRICES.
+    # If the model is unknown and prices are not in the .env, cost is not calculated.
+    _known = KNOWN_PRICES.get(model, (None, None))
+    price_in: float | None = float(cfg["PRICE_INPUT"]) if cfg.get("PRICE_INPUT") else _known[0]
+    price_out: float | None = float(cfg["PRICE_OUTPUT"]) if cfg.get("PRICE_OUTPUT") else _known[1]
+    show_cost = price_in is not None and price_out is not None
 
-    # Valutazione
+    # Evaluation
     results: list[dict] = []
     passed_count = 0
     failed_count = 0
@@ -606,16 +617,16 @@ def main() -> None:
 
     except KeyboardInterrupt:
         interrupted = True
-        console.print("\n[bold red]Test interrotto dall'utente.[/bold red]")
+        console.print("\n[bold red]Test interrupted by user.[/bold red]")
 
     elapsed = time.perf_counter() - start
     end_dt = datetime.now()
 
     if not results:
-        console.print("[dim]Nessun risultato da mostrare.[/dim]")
+        console.print("[dim]No results to display.[/dim]")
         return
 
-    # Calcola costo se abilitato nel .env (price_in/price_out già calcolati sopra)
+    # Calculate cost if enabled in the .env (price_in/price_out already computed above)
     cost_info = None
     if show_cost:
         tok_in = sum(r["input_tokens"] for r in results)

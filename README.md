@@ -144,12 +144,11 @@ Then edit the copy with the correct `BASE_URL`, `API_KEY`, and `MODEL`:
 | Anthropic Claude Sonnet | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
 | OpenAI GPT-4.1-nano | `https://api.openai.com/v1` | `gpt-4.1-nano` |
 
-Optional variables:
+Optional overrides (known models have built-in pricing and always report cost):
 
 ```env
-SHOW_COST=true
-PRICE_INPUT=15.0       # $/M input tokens
-PRICE_OUTPUT=75.0      # $/M output tokens
+PRICE_INPUT=15.0       # $/M input tokens  — override for unknown models
+PRICE_OUTPUT=75.0      # $/M output tokens — override for unknown models
 REASONING_EFFORT=low   # low / medium / high (models that support it)
 ```
 
