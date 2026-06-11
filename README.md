@@ -18,7 +18,7 @@ The three benchmarks cover different dimensions:
 
 ---
 
-## Reference baselines (seed 42, n=30)
+## Reference baselines (seed 42, n=50)
 
 Latest comparative run results on reference models:
 
@@ -27,7 +27,9 @@ Latest comparative run results on reference models:
 | Model | Accuracy |
 |---|---|
 | claude-sonnet-4-6 | 96.7% |
+| claude-opus-4-8 | 92.0% |
 | claude-opus-4-6 | 93.3% |
+| claude-fable-5 | 86.0% |
 | gpt-4.1-nano | 70.0% |
 
 ### HumanEval — pass@1
@@ -35,6 +37,8 @@ Latest comparative run results on reference models:
 | Model | pass@1 |
 |---|---|
 | claude-sonnet-4-6 | 96.7% |
+| claude-opus-4-8 | 96.0% |
+| claude-fable-5 | 94.0% |
 | claude-opus-4-6 | 86.7% |
 | gpt-4.1-nano | 76.7% |
 
@@ -42,6 +46,8 @@ Latest comparative run results on reference models:
 
 | Model | Accuracy |
 |---|---|
+| claude-fable-5 | 74.0% |
+| claude-opus-4-8 | 70.0% |
 | claude-opus-4-6 | 66.7% |
 | claude-sonnet-4-6 | 56.7% |
 | gpt-4.1-nano | 36.7% |
@@ -53,25 +59,25 @@ Latest comparative run results on reference models:
 ```
 demo/
 ├── README.md                  # this file
+├── BENCHMARK_RULES.md         # evaluation rules and success criteria
+├── run_benchmarks.py          # batch runner (multi-seed, multi-env)
+├── Benchmark_Report/          # analysis and manual reports
+│   └── REPORT.md
+├── results/                   # batch outputs (gitignored)
+│   └── batch_YYYYMMDD_HHMMSS/
 ├── MMLU Benchmark/
 │   ├── benchmark.py
-│   ├── README
 │   ├── requirements.txt
-│   ├── .env_*                 # credentials per target
-│   └── results/               # JSON run outputs
+│   └── .env_*                 # credentials per target (gitignored)
 ├── HumanEval/
 │   ├── benchmark.py
-│   ├── README
 │   ├── requirements.txt
-│   ├── .env_*
-│   └── results/
+│   └── .env_*
 └── BIRD/
     ├── benchmark.py
-    ├── README
     ├── requirements.txt
     ├── .env_*
-    ├── bird/                  # BIRD dataset (manual download)
-    └── results/
+    └── bird/                  # BIRD dataset (manual download)
 ```
 
 ---
@@ -83,8 +89,10 @@ Every benchmark is fully agnostic: it reads `BASE_URL`, `API_KEY`, and `MODEL` f
 | Target | `.env` file |
 |---|---|
 | Routerly | `.env_routerly` |
-| Anthropic Claude Opus | `.env_anthropic_opus` |
-| Anthropic Claude Sonnet | `.env_anthropic_sonnet` |
+| Anthropic Claude Fable 5 | `.env_anthropic_fable-5` |
+| Anthropic Claude Opus 4.8 | `.env_anthropic_opus-4-8` |
+| Anthropic Claude Opus 4.6 | `.env_anthropic_opus` |
+| Anthropic Claude Sonnet 4.6 | `.env_anthropic_sonnet` |
 | OpenAI GPT-4.1-nano | `.env_openai_41-nano` |
 
 ---
@@ -140,11 +148,13 @@ Then edit the copy with the correct `BASE_URL`, `API_KEY`, and `MODEL`:
 | Target | `BASE_URL` | `MODEL` |
 |---|---|---|
 | Routerly | `https://api.routerly.ai/v1` | `auto` |
-| Anthropic Claude Opus | `https://api.anthropic.com/v1` | `claude-opus-4-6` |
-| Anthropic Claude Sonnet | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
+| Anthropic Claude Fable 5 | `https://api.anthropic.com/v1` | `claude-fable-5` |
+| Anthropic Claude Opus 4.8 | `https://api.anthropic.com/v1` | `claude-opus-4-8` |
+| Anthropic Claude Opus 4.6 | `https://api.anthropic.com/v1` | `claude-opus-4-6` |
+| Anthropic Claude Sonnet 4.6 | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
 | OpenAI GPT-4.1-nano | `https://api.openai.com/v1` | `gpt-4.1-nano` |
 
-Optional overrides (known models have built-in pricing and always report cost):
+Optional overrides (known models — `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-6`, `claude-sonnet-4-6`, `gpt-4.1-nano` — have built-in pricing and always report cost):
 
 ```env
 PRICE_INPUT=15.0       # $/M input tokens  — override for unknown models
