@@ -2,16 +2,16 @@
 """
 Routerly Benchmark — BIRD (Text-to-SQL)
 
-Benchmark agnostico per valutare la capacità di generazione SQL su database
-aziendali reali, usando il dataset BIRD (BIg Bench for LaRge-scale Database
+Agnostic benchmark to evaluate SQL generation capability on real-world
+business databases, using the BIRD dataset (BIg Bench for LaRge-scale Database
 Grounded Text-to-SQL).
 
-Lo script non conosce il target: riceve solo BASE_URL, API_KEY e MODEL
-dal file .env specificato. Funziona identicamente puntando a Anthropic,
-OpenAI o Routerly.
+The script does not know the target: it only receives BASE_URL, API_KEY and MODEL
+from the specified .env file. It works identically when pointing to Anthropic,
+OpenAI or Routerly.
 
-Metrica principale: execution accuracy — la query è corretta se il suo
-risultato su SQLite coincide con il risultato del gold SQL.
+Main metric: execution accuracy — a query is correct if its result
+on SQLite matches the result of the gold SQL.
 """
 
 import argparse
@@ -27,7 +27,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-# Silenzia warning non pertinenti
+# Silence irrelevant warnings
 warnings.filterwarnings("ignore")
 logging.getLogger("openai").setLevel(logging.ERROR)
 
@@ -51,6 +51,17 @@ console = Console()
 
 DIFFICULTIES = ("simple", "moderate", "challenging")
 
+# List prices for known models ($/M token: input, output).
+# Used as default if PRICE_INPUT/PRICE_OUTPUT are not present in the .env.
+# Can always be overridden via variables in the .env file.
+KNOWN_PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5":    (10.0, 50.0),
+    "claude-opus-4-8":   ( 5.0, 25.0),
+    "claude-opus-4-6":   (15.0, 75.0),
+    "claude-sonnet-4-6": ( 3.0, 15.0),
+    "gpt-4.1-nano":      ( 0.1,  0.4),
+}
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -60,7 +71,7 @@ def load_config(env_file: str) -> dict:
     cfg = dotenv_values(env_file)
     for key in ("BASE_URL", "API_KEY", "MODEL"):
         if not cfg.get(key):
-            console.print(f"[red]Errore: variabile '{key}' mancante in {env_file}[/red]")
+            console.print(f"[red]Error: missing variable '{key}' in {env_file}[/red]")
             sys.exit(1)
     return cfg
 
@@ -75,25 +86,25 @@ def load_bird_questions(
     difficulty: str,
     rng: random.Random,
 ) -> list[dict]:
-    """Carica N domande dal dataset BIRD locale, filtrando per difficoltà."""
+    """Load N questions from the local BIRD dataset, filtered by difficulty."""
     dev_json = bird_dir / "dev.json"
     if not dev_json.exists():
-        console.print(f"[red]File non trovato: {dev_json}[/red]")
-        console.print("[dim]Scarica il dataset da https://bird-bench.github.io/ e posizionalo in --bird-dir[/dim]")
+        console.print(f"[red]File not found: {dev_json}[/red]")
+        console.print("[dim]Download the dataset from https://bird-bench.github.io/ and place it in --bird-dir[/dim]")
         sys.exit(1)
 
     with open(dev_json, encoding="utf-8") as f:
         all_questions = json.load(f)
 
-    # Filtra per difficoltà
+    # Filter by difficulty
     if difficulty != "all":
         all_questions = [q for q in all_questions if q.get("difficulty") == difficulty]
 
     if not all_questions:
-        console.print(f"[red]Nessuna domanda trovata con difficoltà: {difficulty}[/red]")
+        console.print(f"[red]No questions found with difficulty: {difficulty}[/red]")
         sys.exit(1)
 
-    # Campiona
+    # Sample
     rng.shuffle(all_questions)
     selected = all_questions[:n]
 
@@ -120,8 +131,8 @@ def get_db_path(bird_dir: Path, db_id: str) -> Path:
 
 def extract_schema(db_path: Path) -> str:
     """
-    Estrae lo schema delle tabelle dal database SQLite come istruzioni
-    CREATE TABLE testuali, usando PRAGMA table_info.
+    Extract the table schema from the SQLite database as textual
+    CREATE TABLE statements, using PRAGMA table_info.
     """
     conn = sqlite3.connect(str(db_path))
     try:
@@ -166,18 +177,18 @@ def build_prompt(q: dict, schema: str) -> str:
 # ---------------------------------------------------------------------------
 
 def extract_sql(raw: str) -> str:
-    """Rimuove markdown fences e testo non SQL dalla risposta del modello."""
-    # Prova a estrarre da blocco ```sql ... ``` o ``` ... ```
+    """Remove markdown fences and non-SQL text from the model response."""
+    # Try to extract from a ```sql ... ``` or ``` ... ``` block
     m = re.search(r"```(?:sql)?\s*\n?(.*?)```", raw, re.DOTALL | re.IGNORECASE)
     if m:
         return m.group(1).strip()
-    # Fallback: prendi tutto e pulisci
+    # Fallback: take everything and clean up
     sql = re.sub(r"```", "", raw).strip()
     return sql
 
 
 def normalize_result(rows) -> list:
-    """Normalizza i risultati per il confronto: liste di tuple ordinate."""
+    """Normalize results for comparison: sorted lists of tuples."""
     if rows is None:
         return []
     normalized = []
@@ -188,21 +199,35 @@ def normalize_result(rows) -> list:
     return sorted(normalized)
 
 
-def execute_sql(db_path: Path, sql: str) -> tuple[list | None, str]:
+def execute_sql(db_path: Path, sql: str, timeout_s: float = 30.0) -> tuple[list | None, str]:
     """
-    Esegue una query SQL su SQLite.
-    Restituisce (rows, error). rows è None in caso di errore.
+    Execute a SQL query on SQLite with a timeout.
+    Returns (rows, error). rows is None on error or timeout.
     """
-    try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = None
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        conn.close()
-        return rows, ""
-    except Exception as e:
-        return None, str(e)[:300]
+    import threading
+
+    result: list[object] = [None, ""]  # [rows, error]
+    done = threading.Event()
+
+    def _run():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = None
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            conn.close()
+            result[0] = rows
+        except Exception as e:
+            result[1] = str(e)[:300]
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    if not done.wait(timeout_s):
+        return None, f"query timeout after {timeout_s}s"
+    return result[0], result[1]
 
 
 def evaluate_sql(
@@ -211,12 +236,12 @@ def evaluate_sql(
     sql_gold: str,
 ) -> tuple[bool, str]:
     """
-    Valuta la correttezza con execution accuracy.
-    Restituisce (correct, error_message).
+    Evaluate correctness using execution accuracy.
+    Returns (correct, error_message).
     """
     rows_gold, err_gold = execute_sql(db_path, sql_gold)
     if rows_gold is None:
-        # Gold SQL errato: skip (non dovrebbe mai accadere sul dataset ufficiale)
+        # Gold SQL error: skip (should never happen on the official dataset)
         return False, f"gold SQL error: {err_gold}"
 
     rows_pred, err_pred = execute_sql(db_path, sql_generated)
@@ -238,10 +263,10 @@ def call_api(
     reasoning_effort: str | None = None,
 ) -> tuple[str, int, int, int, float, str | None]:
     """
-    Chiama l'API in streaming e restituisce
+    Call the API in streaming mode and return
     (raw_text, input_tokens, output_tokens, reasoning_tokens, ttft_s, trace_id).
-    trace_id è l'header x-routerly-trace-id, presente solo con backend Routerly.
-    Riprova fino a `retries` volte in caso di errore.
+    trace_id is the x-routerly-trace-id header, present only with the Routerly backend.
+    Retries up to `retries` times on error.
     """
     extra: dict = {}
     if reasoning_effort is not None:
@@ -281,7 +306,7 @@ def call_api(
             if ttft is None:
                 ttft = time.perf_counter() - t0
 
-            # Routerly a volte restituisce errori come testo invece di eccezioni
+            # Routerly sometimes returns errors as text instead of exceptions
             if text.lower().startswith("routing failed") or "no_models_available" in text.lower():
                 raise openai.APIError(
                     message=text,
@@ -300,7 +325,7 @@ def call_api(
             msg = str(e).lower()
             if "all_models_limits_exceeded" in msg or "routing failed" in msg or "no_models_available" in msg:
                 wait = 10 * (attempt + 1)
-                console.print(f"[yellow]Routerly: nessun modello disponibile, attendo {wait}s...[/yellow]")
+                console.print(f"[yellow]Routerly: no models available, waiting {wait}s...[/yellow]")
                 if attempt < retries - 1:
                     time.sleep(wait)
                 else:
@@ -318,9 +343,9 @@ def call_api(
 
 def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -> dict | None:
     """
-    Aggrega tutti i record da usage.json con lo stesso traceId:
-    completion + routing (LLM policy) + eventuali cascade falliti.
-    Il totale corrisponde al costo riportato dal backend.
+    Aggregate all records from usage.json with the same traceId:
+    completion + routing (LLM policy) + any failed cascades.
+    The total matches the cost reported by the backend.
     """
     for attempt in range(max_retries):
         try:
@@ -330,7 +355,7 @@ def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -
                 if attempt < max_retries - 1:
                     time.sleep(0.5)
                 continue
-            # Il record completion (callType != routing) porta modelId, outcome e trace
+            # The completion record (callType != routing) carries modelId, outcome and trace
             completion = next(
                 (r for r in reversed(matches) if r.get("callType") != "routing" and r.get("outcome") == "success"),
                 matches[-1],
@@ -358,7 +383,7 @@ def fetch_routerly_trace(trace_id: str, data_file: Path, max_retries: int = 3) -
 # ---------------------------------------------------------------------------
 
 def make_progress(env_label: str):
-    """Restituisce (bar_progress, stats_progress): barra su riga 1, stats su riga 2."""
+    """Return (bar_progress, stats_progress): progress bar on line 1, stats on line 2."""
     bar = Progress(
         SpinnerColumn(),
         TextColumn(f"[bold cyan]{env_label}[/bold cyan]"),
@@ -404,7 +429,7 @@ def print_summary(
     total_reasoning = sum(r.get("reasoning_tokens", 0) for r in results)
     tps = tokens_total / elapsed if elapsed > 0 else 0
 
-    # Accuracy per difficoltà
+    # Accuracy by difficulty
     acc_by_diff: dict[str, tuple[int, int]] = {}
     for r in results:
         diff = r["difficulty"]
@@ -413,32 +438,32 @@ def print_summary(
 
     title = f"[bold]{env_label}[/bold]  [dim]({model})[/dim]"
     if interrupted:
-        title += "  [bold red][INTERROTTO][/bold red]"
+        title += "  [bold red][INTERRUPTED][/bold red]"
 
     table = Table(title=title, show_header=False, min_width=48)
     table.add_column(style="dim", width=30)
     table.add_column(justify="right", style="bold")
 
-    table.add_row("Inizio", start_dt.strftime("%H:%M:%S"))
-    table.add_row("Fine", end_dt.strftime("%H:%M:%S"))
-    table.add_row("Durata", f"{elapsed:.1f}s")
+    table.add_row("Start", start_dt.strftime("%H:%M:%S"))
+    table.add_row("End", end_dt.strftime("%H:%M:%S"))
+    table.add_row("Duration", f"{elapsed:.1f}s")
     table.add_row("", "")
-    table.add_row("Exec accuracy totale", f"{acc_total:.1f}%")
+    table.add_row("Total exec accuracy", f"{acc_total:.1f}%")
     for diff in DIFFICULTIES:
         if diff in acc_by_diff:
             c, t = acc_by_diff[diff]
             table.add_row(f"  {diff}", f"{c/t*100:.1f}%  ({c}/{t})")
     table.add_row("", "")
-    table.add_row("Token totali", f"{tokens_total:,}")
+    table.add_row("Total tokens", f"{tokens_total:,}")
     table.add_row("  input", f"{sum(r['input_tokens'] for r in results):,}")
     table.add_row("  output", f"{sum(r['output_tokens'] for r in results):,}")
     if total_reasoning > 0:
-        table.add_row("    di cui reasoning", f"{total_reasoning:,}")
+        table.add_row("    of which reasoning", f"{total_reasoning:,}")
         table.add_row(
-            "    output visibile",
+            "    visible output",
             f"{sum(r['output_tokens'] - r.get('reasoning_tokens', 0) for r in results):,}",
         )
-    table.add_row("Tok/s medi", f"{tps:.0f}")
+    table.add_row("Avg tok/s", f"{tps:.0f}")
     table.add_row("", "")
     ttfts = [r["ttft_s"] for r in results if r.get("ttft_s") is not None]
     if ttfts:
@@ -447,12 +472,12 @@ def print_summary(
         table.add_row("TTFT avg", f"{sum(ttfts)/len(ttfts)*1000:.0f} ms")
     if cost_info:
         table.add_row("", "")
-        table.add_row("Costo totale", f"${cost_info['total_cost']:.6f}")
+        table.add_row("Total cost", f"${cost_info['total_cost']:.6f}")
         table.add_row(f"  input  (${cost_info['price_input']}/M tok)", f"${cost_info['cost_input']:.6f}")
         table.add_row(f"  output (${cost_info['price_output']}/M tok)", f"${cost_info['cost_output']:.6f}")
     if routerly_cost_info:
         table.add_row("", "")
-        table.add_row("Costo Routerly (tracelog)", f"${routerly_cost_info['total_cost']:.6f}")
+        table.add_row("Routerly cost (tracelog)", f"${routerly_cost_info['total_cost']:.6f}")
         if routerly_cost_info.get('price_input') is not None:
             table.add_row(f"  input  (${routerly_cost_info['price_input']}/M tok)", f"${routerly_cost_info['cost_input']:.6f}")
             table.add_row(f"  output (${routerly_cost_info['price_output']}/M tok)", f"${routerly_cost_info['cost_output']:.6f}")
@@ -477,9 +502,10 @@ def save_results(
     end_dt: datetime,
     cost_info: dict | None = None,
     routerly_cost_info: dict | None = None,
+    output_dir: str | None = None,
 ) -> None:
-    results_dir = Path(__file__).parent / "results"
-    results_dir.mkdir(exist_ok=True)
+    results_dir = Path(output_dir) if output_dir else Path(__file__).parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
     ts = start_dt.strftime("%Y%m%d_%H%M%S")
     safe_label = re.sub(r"[^\w\-]", "_", env_label)
     path = results_dir / f"{ts}_{safe_label}.json"
@@ -488,7 +514,7 @@ def save_results(
     correct_total = sum(1 for r in results if r["correct"])
     tokens_total = sum(r["input_tokens"] + r["output_tokens"] for r in results)
 
-    # Accuracy per difficoltà
+    # Accuracy by difficulty
     acc_by_diff: dict[str, dict] = {}
     for diff in DIFFICULTIES:
         subset = [r for r in results if r["difficulty"] == diff]
@@ -524,7 +550,7 @@ def save_results(
         "results": results,
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    console.print(f"[dim]Risultati salvati in {path}[/dim]")
+    console.print(f"[dim]Results saved to {path}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -533,25 +559,26 @@ def save_results(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Routerly Benchmark — BIRD (Text-to-SQL)")
-    parser.add_argument("--env", required=True, help="Percorso del file .env da usare")
-    parser.add_argument("--bird-dir", required=True, help="Percorso della cartella BIRD scaricata (contiene dev.json e dev_databases/)")
-    parser.add_argument("--n", type=int, default=30, help="Numero totale di domande (default: 30)")
+    parser.add_argument("--env", required=True, help="Path to the .env file to use")
+    parser.add_argument("--bird-dir", required=True, help="Path to the downloaded BIRD folder (contains dev.json and dev_databases/)")
+    parser.add_argument("--n", type=int, default=30, help="Total number of questions (default: 30)")
     parser.add_argument(
         "--difficulty",
         default="all",
         choices=list(DIFFICULTIES) + ["all"],
-        help="Filtra per difficoltà: simple, moderate, challenging, all (default: all)",
+        help="Filter by difficulty: simple, moderate, challenging, all (default: all)",
     )
-    parser.add_argument("--seed", type=int, default=42, help="Seed per riproducibilità (default: 42)")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for reproducibility (default: 42)")
     parser.add_argument(
         "--delay",
         type=float,
         default=0.0,
-        help="Pausa in secondi tra una richiesta e la successiva (default: 0)",
+        help="Delay in seconds between requests (default: 0)",
     )
+    parser.add_argument("--output-dir", default=None, help="Directory for result JSON (default: ./results/)")
     args = parser.parse_args()
 
-    # Carica configurazione
+    # Load configuration
     cfg = load_config(args.env)
     env_label = Path(args.env).name
     model = cfg["MODEL"]
@@ -566,11 +593,11 @@ def main() -> None:
 
     bird_dir = Path(args.bird_dir)
     if not bird_dir.is_dir():
-        console.print(f"[red]Directory BIRD non trovata: {bird_dir}[/red]")
+        console.print(f"[red]BIRD directory not found: {bird_dir}[/red]")
         sys.exit(1)
 
-    # Health-check: verifica che l'endpoint risponda correttamente prima di iniziare
-    console.print(f"[dim]Verifica endpoint {cfg['BASE_URL']}...[/dim]")
+    # Health-check: verify the endpoint responds correctly before starting
+    console.print(f"[dim]Checking endpoint {cfg['BASE_URL']}...[/dim]")
     try:
         probe = client.chat.completions.create(
             model=model,
@@ -580,27 +607,29 @@ def main() -> None:
         )
         probe_text = (probe.choices[0].message.content or "").strip()
         if probe_text.lower().startswith("routing failed") or "no_models_available" in probe_text.lower():
-            console.print(f"[red]Errore endpoint: {probe_text}[/red]")
-            console.print("[dim]Verifica che Routerly sia avviato e il progetto abbia modelli configurati.[/dim]")
+            console.print(f"[red]Endpoint error: {probe_text}[/red]")
+            console.print("[dim]Make sure Routerly is running and the project has models configured.[/dim]")
             sys.exit(1)
-        console.print(f"[dim]Endpoint OK (risposta: {probe_text!r})[/dim]")
+        console.print(f"[dim]Endpoint OK (response: {probe_text!r})[/dim]")
     except Exception as e:
-        console.print(f"[red]Impossibile raggiungere l'endpoint: {e}[/red]")
+        console.print(f"[red]Cannot reach endpoint: {e}[/red]")
         sys.exit(1)
 
     # Dataset
-    console.print("[dim]Caricamento dataset BIRD...[/dim]")
+    console.print("[dim]Loading BIRD dataset...[/dim]")
     rng = random.Random(args.seed)
     questions = load_bird_questions(bird_dir, args.n, args.difficulty, rng)
     total = len(questions)
-    console.print(f"[dim]{total} domande caricate (difficulty={args.difficulty})[/dim]")
+    console.print(f"[dim]{total} questions loaded (difficulty={args.difficulty})[/dim]")
 
-    # Pre-calcola prezzi per il costo live nella progress bar
-    show_cost = cfg.get("SHOW_COST", "false").lower() == "true"
-    price_in = float(cfg.get("PRICE_INPUT", "0")) if show_cost else 0.0
-    price_out = float(cfg.get("PRICE_OUTPUT", "0")) if show_cost else 0.0
+    # Prices: explicit override from .env, otherwise fallback to KNOWN_PRICES.
+    # If the model is unknown and prices are not in the .env, cost is not calculated.
+    _known = KNOWN_PRICES.get(model, (None, None))
+    price_in: float | None = float(cfg["PRICE_INPUT"]) if cfg.get("PRICE_INPUT") else _known[0]
+    price_out: float | None = float(cfg["PRICE_OUTPUT"]) if cfg.get("PRICE_OUTPUT") else _known[1]
+    show_cost = price_in is not None and price_out is not None
 
-    # Valutazione
+    # Evaluation
     results: list[dict] = []
     correct_count = 0
     wrong_count = 0
@@ -635,7 +664,7 @@ def main() -> None:
             for q in questions:
                 db_path = get_db_path(bird_dir, q["db_id"])
                 if not db_path.exists():
-                    console.print(f"[yellow]DB non trovato, skip: {db_path}[/yellow]")
+                    console.print(f"[yellow]DB not found, skipping: {db_path}[/yellow]")
                     bar_progress.update(bar_task, advance=1)
                     continue
 
@@ -743,16 +772,16 @@ def main() -> None:
 
     except KeyboardInterrupt:
         interrupted = True
-        console.print("\n[bold red]Test interrotto dall'utente.[/bold red]")
+        console.print("\n[bold red]Test interrupted by user.[/bold red]")
 
     elapsed = time.perf_counter() - start
     end_dt = datetime.now()
 
     if not results:
-        console.print("[dim]Nessun risultato da mostrare.[/dim]")
+        console.print("[dim]No results to display.[/dim]")
         return
 
-    # Calcola costo se abilitato nel .env (price_in/price_out già calcolati sopra)
+    # Calculate cost if enabled in the .env (price_in/price_out already computed above)
     cost_info = None
     if show_cost:
         tok_in = sum(r["input_tokens"] for r in results)
@@ -775,7 +804,8 @@ def main() -> None:
     print_summary(env_label, model, results, elapsed, start_dt, end_dt,
                   cost_info=cost_info, interrupted=interrupted, routerly_cost_info=routerly_cost_info)
     save_results(env_label, model, results, elapsed, start_dt, end_dt,
-                 cost_info=cost_info, routerly_cost_info=routerly_cost_info)
+                 cost_info=cost_info, routerly_cost_info=routerly_cost_info,
+                 output_dir=args.output_dir)
 
 
 if __name__ == "__main__":

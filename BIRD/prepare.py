@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Routerly Benchmark — BIRD — Script di preparazione
+Routerly Benchmark — BIRD — Preparation script
 
-Esegue in sequenza:
-  1. Verifica dipendenze Python
-  2. Valida i file .env presenti
-  3. Scarica (se assente) e valida il dataset BIRD mini-dev
-  4. Smoke test end-to-end su dataset sintetico (senza chiamate API)
+Runs in sequence:
+  1. Check Python dependencies
+  2. Validate the .env files present
+  3. Download (if missing) and validate the BIRD mini-dev dataset
+  4. End-to-end smoke test on a synthetic dataset (no API calls)
 
-Uso:
-    python prepare.py                         # verifica (e scarica se serve)
-    python prepare.py --bird-dir ./bird       # specifica dove mettere il dataset
-    python prepare.py --smoke-only            # solo smoke test (no API, no download)
+Usage:
+    python prepare.py                         # check (and download if needed)
+    python prepare.py --bird-dir ./bird       # specify where to put the dataset
+    python prepare.py --smoke-only            # smoke test only (no API, no download)
 """
 
 import argparse
@@ -26,7 +26,7 @@ import zipfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Colori / output senza dipendenze esterne
+# Colors / output without external dependencies
 # ---------------------------------------------------------------------------
 
 RESET  = "\033[0m"
@@ -52,11 +52,11 @@ def sep(title: str = "") -> None:
 
 
 # ---------------------------------------------------------------------------
-# 1. Dipendenze
+# 1. Dependencies
 # ---------------------------------------------------------------------------
 
 def check_dependencies() -> bool:
-    sep("Dipendenze")
+    sep("Dependencies")
     all_ok = True
 
     # Python version
@@ -64,7 +64,7 @@ def check_dependencies() -> bool:
     if (major, minor) >= (3, 10):
         ok(f"Python {major}.{minor}")
     else:
-        err(f"Python {major}.{minor} — richiesto ≥ 3.10")
+        err(f"Python {major}.{minor} — required ≥ 3.10")
         all_ok = False
 
     # sqlite3 (stdlib)
@@ -72,33 +72,33 @@ def check_dependencies() -> bool:
         import sqlite3 as _s
         ok(f"sqlite3 {_s.sqlite_version}")
     except ImportError:
-        err("sqlite3 non disponibile")
+        err("sqlite3 not available")
         all_ok = False
 
-    # Pacchetti esterni
+    # External packages
     packages = {"openai": "openai", "dotenv": "python-dotenv", "rich": "rich"}
     for module, pkg in packages.items():
         try:
             __import__(module)
             ok(pkg)
         except ImportError:
-            err(f"{pkg} non installato — esegui: pip install -r requirements.txt")
+            err(f"{pkg} not installed — run: pip install -r requirements.txt")
             all_ok = False
 
     return all_ok
 
 
 # ---------------------------------------------------------------------------
-# 2. File .env
+# 2. .env files
 # ---------------------------------------------------------------------------
 
 def check_env_files() -> bool:
-    sep("File .env")
+    sep(".env Files")
     env_files = sorted(Path(".").glob(".env_*"))
 
     if not env_files:
-        err("Nessun file .env trovato nella directory corrente")
-        info("Crea almeno un file .env con BASE_URL, API_KEY, MODEL")
+        err("No .env file found in the current directory")
+        info("Create at least one .env file with BASE_URL, API_KEY, MODEL")
         return False
 
     all_ok = True
@@ -115,7 +115,7 @@ def check_env_files() -> bool:
 
         missing = [k for k in required if not cfg.get(k)]
         if missing:
-            err(f"{ef.name}  — variabili mancanti: {', '.join(missing)}")
+            err(f"{ef.name}  — missing variables: {', '.join(missing)}")
             all_ok = False
         else:
             model = cfg["MODEL"]
@@ -131,12 +131,12 @@ def check_env_files() -> bool:
 
 DIFFICULTIES = ("simple", "moderate", "challenging")
 
-# URL del pacchetto completo BIRD mini-dev (SQLite, ~400 MB)
+# URL of the complete BIRD mini-dev package (SQLite, ~400 MB)
 MINIDEV_URL = "https://bird-bench.oss-cn-beijing.aliyuncs.com/minidev.zip"
 
 
 # ---------------------------------------------------------------------------
-# Download automatico
+# Automatic download
 # ---------------------------------------------------------------------------
 
 def _progress_hook(block_num: int, block_size: int, total_size: int) -> None:
@@ -149,12 +149,12 @@ def _progress_hook(block_num: int, block_size: int, total_size: int) -> None:
         print(f"\r  {CYAN}↓{RESET}  [{bar}] {pct:5.1f}%  {mb_done:.0f}/{mb_total:.0f} MB", end="", flush=True)
     else:
         mb_done = downloaded / 1_048_576
-        print(f"\r  {CYAN}↓{RESET}  {mb_done:.0f} MB scaricati...", end="", flush=True)
+        print(f"\r  {CYAN}↓{RESET}  {mb_done:.0f} MB downloaded...", end="", flush=True)
 
 
 def download_bird_dataset(bird_dir: Path) -> bool:
-    """Scarica il dataset BIRD mini-dev e lo installa in bird_dir."""
-    sep("Download dataset BIRD mini-dev")
+    """Download the BIRD mini-dev dataset and install it in bird_dir."""
+    sep("Download BIRD mini-dev dataset")
     info(f"URL: {MINIDEV_URL}")
     info(f"Destinazione: {bird_dir.resolve()}")
     print()
@@ -168,44 +168,44 @@ def download_bird_dataset(bird_dir: Path) -> bool:
             print()  # newline dopo la progress bar
         except Exception as e:
             print()
-            err(f"Download fallito: {e}")
+            err(f"Download failed: {e}")
             return False
 
-        ok(f"Download completato ({zip_path.stat().st_size / 1_048_576:.0f} MB)")
+        ok(f"Download complete ({zip_path.stat().st_size / 1_048_576:.0f} MB)")
 
-        # Estrazione
-        info("Estrazione archivio...")
+        # Extraction
+        info("Extracting archive...")
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(tmpdir)
         except Exception as e:
-            err(f"Estrazione fallita: {e}")
+            err(f"Extraction failed: {e}")
             return False
 
-        ok("Archivio estratto")
+        ok("Archive extracted")
 
-        # Trova mini_dev_sqlite.json nel contenuto estratto
+        # Find mini_dev_sqlite.json in the extracted content
         extracted = Path(tmpdir)
         json_candidates = list(extracted.rglob("mini_dev_sqlite.json"))
         if not json_candidates:
-            err("mini_dev_sqlite.json non trovato nell'archivio")
+            err("mini_dev_sqlite.json not found in the archive")
             return False
 
         json_src = json_candidates[0]
-        data_root = json_src.parent  # cartella che contiene json + dev_databases
-        info(f"Dati trovati in: {data_root}")
+        data_root = json_src.parent  # folder containing json + dev_databases
+        info(f"Data found in: {data_root}")
 
-        # Trova dev_databases/
+        # Find dev_databases/
         db_root_candidates = list(data_root.glob("dev_databases"))
         if not db_root_candidates:
-            # prova un livello su
+            # try one level up
             db_root_candidates = list(data_root.parent.glob("dev_databases"))
         if not db_root_candidates:
-            err("Cartella dev_databases/ non trovata nell'archivio")
+            err("Folder dev_databases/ not found in the archive")
             return False
         db_src = db_root_candidates[0]
 
-        # Crea bird_dir e copia
+        # Create bird_dir and copy
         bird_dir.mkdir(parents=True, exist_ok=True)
 
         dest_json = bird_dir / "dev.json"
@@ -223,36 +223,36 @@ def download_bird_dataset(bird_dir: Path) -> bool:
 
 
 def check_bird_dataset(bird_dir: Path) -> bool:
-    sep("Dataset BIRD")
+    sep("BIRD Dataset")
 
     if not bird_dir.is_dir():
-        warn(f"Directory non trovata: {bird_dir}")
-        info("Download automatico del dataset BIRD mini-dev in corso...")
+        warn(f"Directory not found: {bird_dir}")
+        info("Downloading BIRD mini-dev dataset automatically...")
         if not download_bird_dataset(bird_dir):
-            err("Download fallito — installa manualmente il dataset:")
+            err("Download failed — install the dataset manually:")
             info("  https://bird-bench.github.io/")
-            info(f"  Struttura attesa: {bird_dir}/dev.json + {bird_dir}/dev_databases/")
+            info(f"  Expected structure: {bird_dir}/dev.json + {bird_dir}/dev_databases/")
             return False
-        sep("Verifica dataset scaricato")
+        sep("Verifying downloaded dataset")
 
-    ok(f"Directory trovata: {bird_dir.resolve()}")
+    ok(f"Directory found: {bird_dir.resolve()}")
 
     # dev.json
     dev_json = bird_dir / "dev.json"
     if not dev_json.exists():
-        err("dev.json non trovato")
+        err("dev.json not found")
         return False
 
     try:
         with open(dev_json, encoding="utf-8") as f:
             questions = json.load(f)
     except Exception as e:
-        err(f"dev.json non leggibile: {e}")
+        err(f"dev.json not readable: {e}")
         return False
 
-    ok(f"dev.json  →  {len(questions):,} domande totali")
+    ok(f"dev.json  →  {len(questions):,} total questions")
 
-    # Conta per difficoltà
+    # Count by difficulty
     diff_counts: dict[str, int] = {}
     for q in questions:
         d = q.get("difficulty", "unknown")
@@ -264,7 +264,7 @@ def check_bird_dataset(bird_dir: Path) -> bool:
     # dev_databases/
     db_root = bird_dir / "dev_databases"
     if not db_root.is_dir():
-        err("dev_databases/ non trovata")
+        err("dev_databases/ not found")
         return False
 
     db_ids_in_json = set(q["db_id"] for q in questions)
@@ -278,21 +278,21 @@ def check_bird_dataset(bird_dir: Path) -> bool:
         if not sqlite_file.exists():
             sqlite_missing.append(db_dir.name)
 
-    ok(f"dev_databases/  →  {len(db_dirs)} database presenti")
+    ok(f"dev_databases/  →  {len(db_dirs)} databases found")
 
     if missing_dbs:
-        warn(f"{len(missing_dbs)} database referenziati in dev.json ma mancanti su disco")
+        warn(f"{len(missing_dbs)} databases referenced in dev.json but missing on disk")
         for db in sorted(missing_dbs)[:5]:
-            info(f"  mancante: {db}")
+            info(f"  missing: {db}")
         if len(missing_dbs) > 5:
-            info(f"  ... e altri {len(missing_dbs)-5}")
+            info(f"  ... and {len(missing_dbs)-5} more")
     else:
-        ok("Tutti i database referenziati sono presenti")
+        ok("All referenced databases are present")
 
     if sqlite_missing:
-        warn(f"{len(sqlite_missing)} cartelle senza file .sqlite")
+        warn(f"{len(sqlite_missing)} folders without .sqlite file")
     else:
-        ok("Tutti i file .sqlite sono presenti")
+        ok("All .sqlite files are present")
 
     # Prova ad aprire un database a campione
     sample_db = next(
@@ -309,18 +309,18 @@ def check_bird_dataset(bird_dir: Path) -> bool:
             conn.close()
             ok(f"SQLite OK ({sample_db.parent.name}: {len(tables)} tabelle)")
         except Exception as e:
-            err(f"Errore apertura SQLite: {e}")
+            err(f"SQLite open error: {e}")
             return False
 
     return True
 
 
 # ---------------------------------------------------------------------------
-# 4. Smoke test end-to-end (dataset sintetico, senza API)
+# 4. End-to-end smoke test (synthetic dataset, no API)
 # ---------------------------------------------------------------------------
 
 def run_smoke_test() -> bool:
-    sep("Smoke test (pipeline sintetica, no API)")
+    sep("Smoke test (synthetic pipeline, no API)")
 
     # Importa le funzioni del benchmark
     try:
@@ -331,7 +331,7 @@ def run_smoke_test() -> bool:
         bm = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bm)
     except Exception as e:
-        err(f"Impossibile importare benchmark.py: {e}")
+        err(f"Cannot import benchmark.py: {e}")
         return False
 
     ok("benchmark.py importato")
@@ -362,7 +362,7 @@ def run_smoke_test() -> bool:
         )
         conn.commit()
         conn.close()
-        ok("Database sintetico creato (5 righe)")
+        ok("Synthetic database created (5 rows)")
 
         # Test extract_schema
         schema = bm.extract_schema(db_path)
@@ -380,7 +380,7 @@ def run_smoke_test() -> bool:
         for raw, expected in cases:
             result = bm.extract_sql(raw)
             assert expected in result or result == expected, \
-                f"extract_sql({raw!r}) = {result!r}, atteso {expected!r}"
+                f"extract_sql({raw!r}) = {result!r}, expected {expected!r}"
         ok("extract_sql  ✓")
 
         # Test execute_sql + normalize_result
@@ -388,40 +388,40 @@ def run_smoke_test() -> bool:
         pred_sql = "SELECT name FROM employees WHERE dept = 'Engineering'"
 
         rows_gold, err_gold = bm.execute_sql(db_path, gold_sql)
-        assert rows_gold is not None, f"Gold SQL fallito: {err_gold}"
+        assert rows_gold is not None, f"Gold SQL failed: {err_gold}"
         assert len(rows_gold) == 3
         ok("execute_sql (gold)  ✓")
 
         rows_pred, err_pred = bm.execute_sql(db_path, pred_sql)
-        assert rows_pred is not None, f"Pred SQL fallito: {err_pred}"
+        assert rows_pred is not None, f"Pred SQL failed: {err_pred}"
         ok("execute_sql (pred)  ✓")
 
-        # evaluate_sql — query identica → correct
+        # evaluate_sql — identical query → correct
         correct, error = bm.evaluate_sql(db_path, gold_sql, gold_sql)
-        assert correct, f"Query identica non valutata come corretta: {error}"
-        ok("evaluate_sql (identica → corretto)  ✓")
+        assert correct, f"Identical query not evaluated as correct: {error}"
+        ok("evaluate_sql (identical → correct)  ✓")
 
         # evaluate_sql — query diversa ma stesso risultato → correct
         pred_same = "SELECT name FROM employees WHERE dept = 'Engineering' ORDER BY name"
-        # I risultati sono gli stessi dopo normalize (sort), quindi dipende dai dati.
-        # Usiamo un caso certo: COUNT
+        # Results are the same after normalize (sort), so it depends on the data.
+        # Use a certain case: COUNT
         gold_count = "SELECT COUNT(*) FROM employees WHERE dept = 'Engineering'"
         pred_count = "SELECT COUNT(*) FROM employees WHERE dept = 'Engineering'"
         correct2, _ = bm.evaluate_sql(db_path, pred_count, gold_count)
         assert correct2
-        ok("evaluate_sql (count uguale → corretto)  ✓")
+        ok("evaluate_sql (count equal → correct)  ✓")
 
-        # evaluate_sql — query sbagliata → not correct
+        # evaluate_sql — wrong query → not correct
         wrong_sql = "SELECT name FROM employees WHERE dept = 'HR'"
         correct3, _ = bm.evaluate_sql(db_path, wrong_sql, gold_sql)
         assert not correct3
-        ok("evaluate_sql (sbagliata → non corretto)  ✓")
+        ok("evaluate_sql (wrong → not correct)  ✓")
 
-        # evaluate_sql — SQL non valido → error, not correct
+        # evaluate_sql — invalid SQL → error, not correct
         correct4, err4 = bm.evaluate_sql(db_path, "NOT VALID SQL !!!!", gold_sql)
         assert not correct4
         assert err4 != ""
-        ok(f"evaluate_sql (SQL non valido → errore catturato)  ✓")
+        ok(f"evaluate_sql (invalid SQL → error caught)  ✓")
 
         # build_prompt
         q = {
@@ -437,7 +437,7 @@ def run_smoke_test() -> bool:
         ok("build_prompt  ✓")
 
     sep()
-    ok("Smoke test completato — pipeline funzionante")
+    ok("Smoke test complete — pipeline working")
     return True
 
 
@@ -446,32 +446,32 @@ def run_smoke_test() -> bool:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Routerly BIRD — preparazione ambiente")
+    parser = argparse.ArgumentParser(description="Routerly BIRD — environment preparation")
     parser.add_argument(
         "--bird-dir",
         default="./bird",
-        help="Percorso della cartella BIRD (default: ./bird). Scaricato automaticamente se assente.",
+        help="Path to the BIRD folder (default: ./bird). Downloaded automatically if missing.",
     )
     parser.add_argument(
         "--smoke-only",
         action="store_true",
-        help="Esegui solo lo smoke test sintetico, senza scaricare né verificare il dataset reale",
+        help="Run only the synthetic smoke test, without downloading or verifying the real dataset",
     )
     args = parser.parse_args()
 
-    print(f"\n{BOLD}Routerly Benchmark — BIRD — Preparazione{RESET}\n")
+    print(f"\n{BOLD}Routerly Benchmark — BIRD — Setup{RESET}\n")
 
     results = []
 
     if not args.smoke_only:
-        results.append(("Dipendenze",    check_dependencies()))
-        results.append(("File .env",     check_env_files()))
-        results.append(("Dataset BIRD",  check_bird_dataset(Path(args.bird_dir))))
+        results.append(("Dependencies",  check_dependencies()))
+        results.append((".env Files",    check_env_files()))
+        results.append(("BIRD Dataset",  check_bird_dataset(Path(args.bird_dir))))
 
     results.append(("Smoke test",    run_smoke_test()))
 
-    # Riepilogo finale
-    sep("Riepilogo")
+    # Final summary
+    sep("Summary")
     all_passed = True
     for name, passed in results:
         if passed:
@@ -482,14 +482,14 @@ def main() -> None:
 
     print()
     if all_passed:
-        print(f"  {GREEN}{BOLD}Tutto pronto.{RESET}  Puoi eseguire il benchmark:\n")
+        print(f"  {GREEN}{BOLD}All done.{RESET}  You can run the benchmark:\n")
         bird_dir = args.bird_dir
         print(f"    python benchmark.py --env .env_routerly --bird-dir {bird_dir} --n 30 --seed 42")
         print(f"    python benchmark.py --env .env_anthropic_opus --bird-dir {bird_dir} --n 30 --seed 42")
         print()
         sys.exit(0)
     else:
-        print(f"  {RED}{BOLD}Setup incompleto.{RESET}  Risolvi gli errori segnalati sopra.\n")
+        print(f"  {RED}{BOLD}Incomplete setup.{RESET}  Fix the errors reported above.\n")
         sys.exit(1)
 
 
