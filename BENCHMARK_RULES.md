@@ -271,3 +271,24 @@ When in doubt about Routerly behavior, configuration, or concepts, refer to the 
 
 - The documentation **SHOULD** be consulted before making assumptions about Routerly's routing logic, policy system, or project structure.
 - The documentation **MAY** be outdated. If a discrepancy is found between the docs and observed behavior, observed behavior takes precedence and the discrepancy **SHOULD** be noted.
+
+---
+
+## 13. Batch Runner
+
+The unified batch runner (`run_benchmarks.py`) automates full benchmark campaigns across multiple seeds and environments.
+
+### Rules
+
+1. All batch outputs **MUST** be stored under `results/batch_<timestamp>/`. This directory is gitignored; only `results/.gitkeep` is tracked.
+2. Each batch **MUST** produce:
+   - `metadata.json` — seeds, parameters, timestamps.
+   - `config/` — snapshot of the Routerly routing configuration at the time of the run.
+   - Per-benchmark subdirectory (`bird/`, `humaneval/`, `mmlu/`) with `raw/` JSON files and a `report.md`.
+   - A top-level `report.md` summarizing all benchmarks.
+3. The runner uses `--output-dir` to direct each benchmark's output into the batch folder. Individual benchmark scripts remain backward-compatible (default behavior unchanged when `--output-dir` is omitted).
+4. Results **MUST** include the seed in the filename (prefix `seed<N>_`) to enable resume and traceability.
+5. Resume support: the runner **MUST** skip any (benchmark, env, seed) combination whose output file already exists.
+6. Sequential execution is **REQUIRED** to avoid rate-limit interference between concurrent runs.
+7. The `--envs` filter applies per benchmark: only `.env_*` files matching the filter in each benchmark directory are used.
+8. On subprocess failure the runner **MUST** log the error and continue with remaining runs.

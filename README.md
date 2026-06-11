@@ -153,3 +153,65 @@ REASONING_EFFORT=low   # low / medium / high (models that support it)
 ```
 
 `.env_*` files **must not be committed** — they are already listed in `.gitignore`.
+
+---
+
+## Batch Runner
+
+`run_benchmarks.py` at the project root runs all (or a subset of) benchmarks across multiple seeds and environments in a single command, collecting results into a timestamped batch folder.
+
+### Usage
+
+```bash
+# Run all 3 benchmarks, 3 random seeds, 30 questions each
+python run_benchmarks.py --seeds 3 --n 30
+
+# Explicit seeds, only BIRD and MMLU
+python run_benchmarks.py --seed-values 42,1337,9999 --n 50 --benchmarks bird,mmlu
+
+# Filter environments
+python run_benchmarks.py --seeds 2 --n 20 --envs env_routerly,env_anthropic_sonnet
+
+# Resume an interrupted batch
+python run_benchmarks.py --seeds 3 --n 30 --resume results/batch_20260402_150000
+```
+
+### CLI arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--seeds N` | yes* | — | Number of random seeds to generate |
+| `--seed-values V` | yes* | — | Comma-separated explicit seed values |
+| `--n N` | yes | — | Questions per seed per benchmark |
+| `--benchmarks` | no | `bird,humaneval,mmlu` | Comma-separated benchmark filter |
+| `--envs` | no | all `.env_*` found | Comma-separated env filter |
+| `--bird-dir` | no | `./BIRD/bird` | Path to BIRD dataset |
+| `--delay` | no | `0` | Delay between requests (seconds) |
+| `--resume` | no | — | Path to existing batch to resume |
+
+\* `--seeds` and `--seed-values` are mutually exclusive; one is required.
+
+### Output structure
+
+```
+results/
+├── .gitkeep
+└── batch_YYYYMMDD_HHMMSS/
+    ├── report.md              # batch-level summary
+    ├── metadata.json          # seeds, params, timestamps
+    ├── run_log.json           # per-run status log
+    ├── config/                # Routerly routing config snapshot
+    │   ├── projects.json
+    │   └── models.json
+    ├── bird/
+    │   ├── report.md          # per-benchmark report
+    │   └── raw/               # individual result JSONs
+    ├── humaneval/
+    │   ├── report.md
+    │   └── raw/
+    └── mmlu/
+        ├── report.md
+        └── raw/
+```
+
+The `results/` directory is gitignored (except `.gitkeep`).

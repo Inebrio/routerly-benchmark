@@ -48,6 +48,8 @@ console = Console()
 # Used as default if PRICE_INPUT/PRICE_OUTPUT are not present in the .env.
 # Can always be overridden via variables in the .env file.
 KNOWN_PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5":    (10.0, 50.0),
+    "claude-opus-4-8":   ( 5.0, 25.0),
     "claude-opus-4-6":   (15.0, 75.0),
     "claude-sonnet-4-6": ( 3.0, 15.0),
     "gpt-4.1-nano":      ( 0.1,  0.4),
@@ -318,9 +320,9 @@ def print_summary(env_label: str, model: str, results: list[dict], elapsed: floa
 
 def save_results(env_label: str, model: str, results: list[dict], elapsed: float,
                  start_dt: datetime, end_dt: datetime, cost_info: dict | None = None,
-                 routerly_cost_info: dict | None = None) -> None:
-    results_dir = Path(__file__).parent / "results"
-    results_dir.mkdir(exist_ok=True)
+                 routerly_cost_info: dict | None = None, output_dir: str | None = None) -> None:
+    results_dir = Path(output_dir) if output_dir else Path(__file__).parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
     ts = start_dt.strftime("%Y%m%d_%H%M%S")
     safe_label = re.sub(r"[^\w\-]", "_", env_label)
     path = results_dir / f"{ts}_{safe_label}.json"
@@ -363,6 +365,7 @@ def main() -> None:
     parser.add_argument("--env", required=True, help="Path to the .env file to use")
     parser.add_argument("--n", type=int, default=30, help="Number of MMLU questions (default: 30)")
     parser.add_argument("--seed", type=int, default=42, help="Seed for reproducibility (default: 42)")
+    parser.add_argument("--output-dir", default=None, help="Directory for result JSON (default: ./results/)")
     args = parser.parse_args()
 
     # Load configuration
@@ -508,7 +511,8 @@ def main() -> None:
     print_summary(env_label, model, results, elapsed, start_dt, end_dt,
                   cost_info=cost_info, interrupted=interrupted, routerly_cost_info=routerly_cost_info)
     save_results(env_label, model, results, elapsed, start_dt, end_dt,
-                 cost_info=cost_info, routerly_cost_info=routerly_cost_info)
+                 cost_info=cost_info, routerly_cost_info=routerly_cost_info,
+                 output_dir=args.output_dir)
 
 
 if __name__ == "__main__":

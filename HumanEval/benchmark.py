@@ -56,6 +56,8 @@ HUMANEVAL_TOTAL = 164  # numero totale di problemi nel dataset
 # Used as default if PRICE_INPUT/PRICE_OUTPUT are not present in the .env.
 # Can always be overridden via variables in the .env file.
 KNOWN_PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5":    (10.0, 50.0),
+    "claude-opus-4-8":   ( 5.0, 25.0),
     "claude-opus-4-6":   (15.0, 75.0),
     "claude-sonnet-4-6": ( 3.0, 15.0),
     "gpt-4.1-nano":      ( 0.1,  0.4),
@@ -417,9 +419,10 @@ def save_results(
     end_dt: datetime,
     cost_info: dict | None = None,
     routerly_cost_info: dict | None = None,
+    output_dir: str | None = None,
 ) -> None:
-    results_dir = Path(__file__).parent / "results"
-    results_dir.mkdir(exist_ok=True)
+    results_dir = Path(output_dir) if output_dir else Path(__file__).parent / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
     ts = start_dt.strftime("%Y%m%d_%H%M%S")
     safe_label = re.sub(r"[^\w\-]", "_", env_label)
     path = results_dir / f"{ts}_{safe_label}.json"
@@ -486,6 +489,7 @@ def main() -> None:
         default=0.0,
         help="Delay in seconds between requests (default: 0). Useful with Routerly to avoid all_models_limits_exceeded.",
     )
+    parser.add_argument("--output-dir", default=None, help="Directory for result JSON (default: ./results/)")
     args = parser.parse_args()
 
     # Load configuration
@@ -651,7 +655,8 @@ def main() -> None:
         cost_info=cost_info, interrupted=interrupted, routerly_cost_info=routerly_cost_info,
     )
     save_results(env_label, model, results, elapsed, start_dt, end_dt,
-                 cost_info=cost_info, routerly_cost_info=routerly_cost_info)
+                 cost_info=cost_info, routerly_cost_info=routerly_cost_info,
+                 output_dir=args.output_dir)
 
 
 if __name__ == "__main__":
