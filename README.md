@@ -1,14 +1,31 @@
-# Routerly Demo — Benchmark Suite
+# Routerly — Benchmark Suite
 
-A set of benchmarks to measure the impact of **Routerly**'s intelligent routing on quality, cost, and latency compared to calling LLM models directly.
+Sending every request to the most powerful model is the easiest approach — but rarely the smartest one. **[Routerly](https://blog.routerly.ai/introducing-routerly)** is a self-hosted LLM gateway that routes each request to the right model based on task complexity: routine queries go to fast, cheap models; genuinely hard ones reach premium tiers.
+
+This repository is the open benchmark suite that measures whether routing actually delivers on that promise — across reasoning, code generation, and structured data tasks.
+
+> **"The right metric is quality per dollar."**
+> Routerly achieves near-frontier accuracy on code at one-third the cost of running Opus 4.8 directly. [See the latest numbers →](https://blog.routerly.ai/routerly-vs-fable-5-opus-4-8)
 
 ---
 
-## What this suite demonstrates
+## Latest results
 
-An AI router intercepts every request and assigns it to the most suitable model based on the estimated complexity of the task. The expected outcome is accuracy close to premium models at a significantly lower average cost, because simple requests are served by cheaper models.
+Results are published on the blog as new models and routing policies are benchmarked:
 
-The three benchmarks cover different dimensions:
+| Article | What it covers |
+|---|---|
+| [Routerly vs Fable 5 and Opus 4.8](https://blog.routerly.ai/routerly-vs-fable-5-opus-4-8) | How routing holds up against the two newest frontier models |
+| [1,000 questions per model: BIRD caught up to Sonnet](https://blog.routerly.ai/routerly-benchmark-1000-questions) | Large-scale text-to-SQL — routing now matches Sonnet within −0.7 pp |
+| [We ran 200 questions per model](https://blog.routerly.ai/we-ran-200-questions-per-model) | First large batch: routing matched top-model accuracy while cutting costs up to 69% |
+| [LLM routing policies work: what three benchmarks confirm](https://blog.routerly.ai/benchmark-results-humaneval-mmlu-bird) | Validation across all three benchmarks in this suite |
+| [Measuring Routerly: MMLU, HumanEval, and BIRD](https://blog.routerly.ai/routerly-benchmark-suite) | Introduction to the suite and what each benchmark measures |
+
+---
+
+## What this suite measures
+
+Three benchmarks covering the workloads most relevant to real production usage:
 
 | Benchmark | Task | Dataset | Main metric |
 |---|---|---|---|
@@ -16,41 +33,7 @@ The three benchmarks cover different dimensions:
 | [HumanEval](./HumanEval/) | Python code generation | OpenAI HumanEval (164 problems) | pass@1 (%) |
 | [BIRD](./BIRD/) | SQL generation on real databases | BIRD text-to-SQL (95 databases) | Execution accuracy (%) |
 
----
-
-## Reference baselines (seed 42, n=50)
-
-Latest comparative run results on reference models:
-
-### MMLU — Accuracy
-
-| Model | Accuracy |
-|---|---|
-| claude-sonnet-4-6 | 96.7% |
-| claude-opus-4-8 | 92.0% |
-| claude-opus-4-6 | 93.3% |
-| claude-fable-5 | 86.0% |
-| gpt-4.1-nano | 70.0% |
-
-### HumanEval — pass@1
-
-| Model | pass@1 |
-|---|---|
-| claude-sonnet-4-6 | 96.7% |
-| claude-opus-4-8 | 96.0% |
-| claude-fable-5 | 94.0% |
-| claude-opus-4-6 | 86.7% |
-| gpt-4.1-nano | 76.7% |
-
-### BIRD — Execution Accuracy
-
-| Model | Accuracy |
-|---|---|
-| claude-fable-5 | 74.0% |
-| claude-opus-4-8 | 70.0% |
-| claude-opus-4-6 | 66.7% |
-| claude-sonnet-4-6 | 56.7% |
-| gpt-4.1-nano | 36.7% |
+Every benchmark is **fully agnostic**: it reads `BASE_URL`, `API_KEY`, and `MODEL` from a `.env` file and works identically against Routerly, Anthropic, OpenAI, or any OpenAI-compatible endpoint. The central question it answers: does routing track the best model in the pool, or does it regress toward the cheapest?
 
 ---
 
@@ -84,8 +67,6 @@ demo/
 
 ## Supported targets
 
-Every benchmark is fully agnostic: it reads `BASE_URL`, `API_KEY`, and `MODEL` from a `.env` file and works identically against any OpenAI-compatible endpoint.
-
 | Target | `.env` file |
 |---|---|
 | Routerly | `.env_routerly` |
@@ -112,79 +93,20 @@ pip install -r requirements.txt
 
 ## Running a comparison
 
-Using the same `--seed` across all runs guarantees the same question subset — essential for valid comparisons.
+Use the **batch runner** to compare multiple models across multiple seeds in one command:
 
 ```bash
-# Terminal 1
-python benchmark.py --env .env_routerly --seed 42
-
-# Terminal 2
-python benchmark.py --env .env_anthropic_opus --seed 42
-
-# Terminal 3
-python benchmark.py --env .env_anthropic_sonnet --seed 42
-
-# Terminal 4
-python benchmark.py --env .env_openai_41-nano --seed 42
-```
-
-Results are saved to `results/<timestamp>_<env_label>.json`.
-
----
-
-## `.env` file conventions
-
-Each subdirectory contains a ready-to-use `.env.example`. Copy it to the target you want to run:
-
-```bash
-cp .env.example .env_routerly          # Routerly router
-cp .env.example .env_anthropic_opus    # Claude Opus direct
-cp .env.example .env_anthropic_sonnet  # Claude Sonnet direct
-cp .env.example .env_openai_41-nano    # GPT-4.1-nano direct
-```
-
-Then edit the copy with the correct `BASE_URL`, `API_KEY`, and `MODEL`:
-
-| Target | `BASE_URL` | `MODEL` |
-|---|---|---|
-| Routerly | `https://api.routerly.ai/v1` | `auto` |
-| Anthropic Claude Fable 5 | `https://api.anthropic.com/v1` | `claude-fable-5` |
-| Anthropic Claude Opus 4.8 | `https://api.anthropic.com/v1` | `claude-opus-4-8` |
-| Anthropic Claude Opus 4.6 | `https://api.anthropic.com/v1` | `claude-opus-4-6` |
-| Anthropic Claude Sonnet 4.6 | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
-| OpenAI GPT-4.1-nano | `https://api.openai.com/v1` | `gpt-4.1-nano` |
-
-Optional overrides (known models — `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-6`, `claude-sonnet-4-6`, `gpt-4.1-nano` — have built-in pricing and always report cost):
-
-```env
-PRICE_INPUT=15.0       # $/M input tokens  — override for unknown models
-PRICE_OUTPUT=75.0      # $/M output tokens — override for unknown models
-REASONING_EFFORT=low   # low / medium / high (models that support it)
-```
-
-`.env_*` files **must not be committed** — they are already listed in `.gitignore`.
-
----
-
-## Batch Runner
-
-`run_benchmarks.py` at the project root runs all (or a subset of) benchmarks across multiple seeds and environments in a single command, collecting results into a timestamped batch folder.
-
-### Usage
-
-```bash
-# Run all 3 benchmarks, 3 random seeds, 30 questions each
+# 3 random seeds, 30 questions each, all envs
 python run_benchmarks.py --seeds 3 --n 30
 
-# Explicit seeds, only BIRD and MMLU
-python run_benchmarks.py --seed-values 42,1337,9999 --n 50 --benchmarks bird,mmlu
-
-# Filter environments
-python run_benchmarks.py --seeds 2 --n 20 --envs env_routerly,env_anthropic_sonnet
+# Explicit seeds, only HumanEval and MMLU, two specific envs
+python run_benchmarks.py --seed-values 42,1337,9999 --n 30 --benchmarks humaneval,mmlu --envs env_routerly,env_anthropic_sonnet
 
 # Resume an interrupted batch
 python run_benchmarks.py --seeds 3 --n 30 --resume results/batch_20260402_150000
 ```
+
+Using the same `--seed` across runs guarantees the same question subset — essential for valid comparisons.
 
 ### CLI arguments
 
@@ -205,17 +127,14 @@ python run_benchmarks.py --seeds 3 --n 30 --resume results/batch_20260402_150000
 
 ```
 results/
-├── .gitkeep
 └── batch_YYYYMMDD_HHMMSS/
     ├── report.md              # batch-level summary
     ├── metadata.json          # seeds, params, timestamps
     ├── run_log.json           # per-run status log
-    ├── config/                # Routerly routing config snapshot
-    │   ├── projects.json
-    │   └── models.json
+    ├── config/                # Routerly routing config snapshot (secrets redacted)
     ├── bird/
-    │   ├── report.md          # per-benchmark report
-    │   └── raw/               # individual result JSONs
+    │   ├── report.md
+    │   └── raw/
     ├── humaneval/
     │   ├── report.md
     │   └── raw/
@@ -224,4 +143,36 @@ results/
         └── raw/
 ```
 
-The `results/` directory is gitignored (except `.gitkeep`).
+Results are gitignored — only the aggregated `report.md` per batch matters for comparisons.
+
+---
+
+## `.env` file conventions
+
+Each subdirectory contains a ready-to-use `.env.example`. Copy it to the target you want to run:
+
+```bash
+cp .env.example .env_routerly
+cp .env.example .env_anthropic_fable-5
+```
+
+Then edit the copy with the correct `BASE_URL`, `API_KEY`, and `MODEL`:
+
+| Target | `BASE_URL` | `MODEL` |
+|---|---|---|
+| Routerly | `https://api.routerly.ai/v1` | `auto` |
+| Anthropic Claude Fable 5 | `https://api.anthropic.com/v1` | `claude-fable-5` |
+| Anthropic Claude Opus 4.8 | `https://api.anthropic.com/v1` | `claude-opus-4-8` |
+| Anthropic Claude Opus 4.6 | `https://api.anthropic.com/v1` | `claude-opus-4-6` |
+| Anthropic Claude Sonnet 4.6 | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
+| OpenAI GPT-4.1-nano | `https://api.openai.com/v1` | `gpt-4.1-nano` |
+
+Known models (`claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-6`, `claude-sonnet-4-6`, `gpt-4.1-nano`) have built-in pricing and always report cost. For unknown models, add overrides:
+
+```env
+PRICE_INPUT=15.0       # $/M input tokens
+PRICE_OUTPUT=75.0      # $/M output tokens
+REASONING_EFFORT=low   # low / medium / high (models that support it)
+```
+
+`.env_*` files **must not be committed** — they are already listed in `.gitignore`.
