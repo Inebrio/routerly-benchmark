@@ -1,0 +1,4 @@
+scenarios.json
+results/
+__pycache__/
+.venv/

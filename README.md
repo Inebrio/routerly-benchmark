@@ -23,6 +23,14 @@ Results are published on the blog as new models and routing policies are benchma
 
 ---
 
+## Latency overhead
+
+[`Latency/`](./Latency/) measures what Routerly adds to a provider call, with a simulated upstream of known latency. Run by the Routerly team on Routerly 0.6.1, 2026-11-11, one 3-core machine over loopback. Non-streaming, concurrency 1, small request, p50 / p95 overhead: no policy **+9.5 / +22 ms**, regex guardrails +9 / +11 ms, PII +10 / +24 ms, optimizers +9 / +16 ms, semantic routing +51 / +61 ms, LLM routing +164 / +171 ms, judge guardrail +165 / +187 ms. Unfavourable results are published too: the `cheapest`+`health` router grows with usage history and concurrency (+366 ms at concurrency 4, tracked as ROUT-740). Full tables, method, limits and rerun instructions: [Latency/README.md](./Latency/README.md).
+
+**Limitations of this suite.** The quality benchmarks (MMLU, HumanEval, BIRD) run against real providers and are subject to their variability; the latency benchmark uses a simulated upstream on a single machine and does not cover real networks, TLS, concurrency above 4 or sustained load. All results are measured by the Routerly team, not by a third party.
+
+---
+
 ## What this suite measures
 
 Three benchmarks covering the workloads most relevant to real production usage:
@@ -48,6 +56,10 @@ demo/
 │   └── REPORT.md
 ├── results/                   # batch outputs (gitignored)
 │   └── batch_YYYYMMDD_HHMMSS/
+├── Latency/                   # gateway latency overhead (simulated upstream)
+│   ├── README.md              # method, results, limits, rerun
+│   ├── benchmark.py  mock_upstream.py  setup_routerly.py  selfcheck.py
+│   └── published/             # published runs (results.json, report.md)
 ├── MMLU Benchmark/
 │   ├── benchmark.py
 │   ├── requirements.txt
