@@ -2,7 +2,7 @@
 
 > **Campaign date:** April 2026
 > **Methodology:** 4-phase campaign (setup → baselines → tuning → multi-seed validation)
-> **Seeds:** 10 independent seeds — 1952, 5235, 8234, 8386, 1682, 3659, 9848, 9119, 6892, 9381
+> **Seeds:** 10 distinct seeds — 1952, 5235, 8234, 8386, 1682, 3659, 9848, 9119, 6892, 9381
 > **Raw results:** `raw_results/mmlu/`, `raw_results/humaneval/`, `raw_results/bird/`
 
 ---

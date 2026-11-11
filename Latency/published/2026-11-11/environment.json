@@ -1,0 +1,45 @@
+{
+  "date_utc": "2026-11-11T14:24:31+00:00",
+  "run_by": "the Routerly team",
+  "routerly_version": "0.6.1",
+  "routerly_commit": "df1e0bbb",
+  "machine": {
+    "cpu": "Intel(R) Core(TM) i3-4150T CPU @ 3.00GHz",
+    "logical_cores": 3,
+    "memory": "8.0Gi",
+    "os": "Linux-7.0.14-25-pve-x86_64-with-glibc2.36",
+    "python": "3.11.2",
+    "node": "v22.23.2",
+    "load_avg_start": [
+      2.09375,
+      2.81591796875,
+      2.27001953125
+    ]
+  },
+  "topology": "client, Routerly and the simulated upstream run on the same host over loopback",
+  "mock_upstream": {
+    "host": "127.0.0.1",
+    "port": 4100,
+    "ttfb_ms": 100,
+    "chunk_ms": 5,
+    "reply_tokens": 20,
+    "aux_ms": 150,
+    "embed_ms": 40
+  },
+  "parameters": {
+    "concurrency": [
+      1,
+      4
+    ],
+    "sizes": {
+      "small": "+0 chars",
+      "large": "+24000 chars"
+    },
+    "requests_per_round": {
+      "1": 20,
+      "other": 64
+    },
+    "rounds": 3,
+    "warmup": 10
+  }
+}

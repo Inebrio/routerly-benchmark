@@ -1,0 +1,10 @@
+PASS  direct non-stream total p50 202.5 ms, configured 200 ms (+-3.0)
+PASS  direct stream TTFB p50 102.1 ms, configured 100 ms (+-3.0)
+PASS  router-minimal: extra upstream calls per request {'aux': 0.0, 'embed': 0.0}, expected {'aux': 0, 'embed': 0}
+PASS  router-simple: extra upstream calls per request {'aux': 0.0, 'embed': 0.0}, expected {'aux': 0, 'embed': 0}
+PASS  router-llm-policy: extra upstream calls per request {'aux': 1.0, 'embed': 0.0}, expected {'aux': 1, 'embed': 0}
+PASS  router-semantic: extra upstream calls per request {'aux': 0.0, 'embed': 1.0}, expected {'aux': 0, 'embed': 1}
+PASS  guardrails-regex: extra upstream calls per request {'aux': 0.0, 'embed': 0.0}, expected {'aux': 0, 'embed': 0}
+PASS  guardrails-judge: extra upstream calls per request {'aux': 1.0, 'embed': 0.0}, expected {'aux': 1, 'embed': 0}
+PASS  pii: extra upstream calls per request {'aux': 0.0, 'embed': 0.0}, expected {'aux': 0, 'embed': 0}
+PASS  optimizers: extra upstream calls per request {'aux': 0.0, 'embed': 0.0}, expected {'aux': 0, 'embed': 0}

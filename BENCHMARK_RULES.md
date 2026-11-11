@@ -292,3 +292,19 @@ The unified batch runner (`run_benchmarks.py`) automates full benchmark campaign
 6. Sequential execution is **REQUIRED** to avoid rate-limit interference between concurrent runs.
 7. The `--envs` filter applies per benchmark: only `.env_*` files matching the filter in each benchmark directory are used.
 8. On subprocess failure the runner **MUST** log the error and continue with remaining runs.
+
+---
+
+## 14. Latency Overhead Benchmark
+
+`Latency/` measures the latency Routerly adds to a provider call. It is a different kind of benchmark from the quality ones above: it uses a simulated upstream with known latency, not real models.
+
+### Rules
+
+1. The upstream **MUST** be the simulated OpenAI-compatible server in `Latency/mock_upstream.py`, with its latencies declared in `environment.json`.
+2. Every scenario **MUST** be measured as direct call vs call through Routerly, with the same payload. Direct and gateway batches **MUST** alternate inside each round.
+3. Results **MUST** report at least p50, p95 and p99 of the overhead for streaming (time to first byte) and non-streaming (total time), for each concurrency and request size, plus the spread of the per-round median.
+4. Policies that add an upstream call (`llm`, `semantic-intent`, guardrail judge) **MUST** be separate rows, and the number of extra upstream calls per request **MUST** be reported.
+5. `Latency/selfcheck.py` **MUST** pass before a run is published.
+6. A published run **MUST** state who ran it, the machine, the Routerly version and commit, and the date. Unfavourable results **MUST NOT** be removed or reworded.
+7. A run **MUST NOT** be presented as run by a third party unless a party other than the Routerly team executed it.
